@@ -1,0 +1,22 @@
+{
+  "name": "contrat-facil",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@sparticuz/chromium": "^123.0.1",
+    "firebase": "^10.12.0",
+    "puppeteer-core": "^22.8.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "vite": "^5.2.12"
+  }
+}

@@ -1,0 +1,21 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# environment variables (NUNCA suba isso!)
+.env
+.env.local
+.env.production
+
+# Vercel
+.vercel
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+*.zip
