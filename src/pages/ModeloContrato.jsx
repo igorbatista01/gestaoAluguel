@@ -85,6 +85,7 @@ export default function ModeloContrato() {
   const navigate = useNavigate();
 
   const editorRef = useRef(null);
+  const savedSelRef = useRef(null); // salva seleção antes do select abrir
   const [nome, setNome] = useState("");
   const [conteudoInicial, setConteudoInicial] = useState(null); // HTML carregado do Firestore
   const [saving, setSaving] = useState(false);
@@ -123,11 +124,11 @@ export default function ModeloContrato() {
     document.execCommand(cmd, false, value);
   }, []);
 
-  // Insere variável
+  // Insere variável (com espaço após o chip para separação entre chips consecutivos)
   function inserirVariavel(key) {
     editorRef.current?.focus();
     insertAtCursor(
-      `<span class="var-chip" contenteditable="false" style="display:inline-flex;align-items:center;gap:2px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 2px 1px 6px;font-size:0.85em;font-family:monospace;user-select:none;cursor:default;">${key}<span class="var-chip-x" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#3b82f6;color:#fff;font-family:sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;" title="Remover variável">×</span></span>`
+      `<span class="var-chip" contenteditable="false" style="display:inline-flex;align-items:center;gap:2px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 2px 1px 6px;font-size:0.85em;font-family:monospace;user-select:none;cursor:default;">${key}<span class="var-chip-x" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#3b82f6;color:#fff;font-family:sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;" title="Remover variável">×</span></span>\u00A0`
     );
   }
 
@@ -232,8 +233,20 @@ export default function ModeloContrato() {
         <div style={s.toolbar}>
           <select
             style={s.toolSelect}
-            onChange={(e) => execCmd("fontSize", e.target.value)}
-            defaultValue=""
+            value=""
+            onMouseDown={() => {
+              // Salva a seleção antes do dropdown roubar o foco
+              const sel = window.getSelection();
+              if (sel?.rangeCount > 0) savedSelRef.current = sel.getRangeAt(0).cloneRange();
+            }}
+            onChange={(e) => {
+              // Restaura seleção e aplica o tamanho
+              editorRef.current?.focus();
+              const sel = window.getSelection();
+              if (savedSelRef.current) { sel?.removeAllRanges(); sel?.addRange(savedSelRef.current); }
+              document.execCommand("fontSize", false, e.target.value);
+              e.target.value = "";
+            }}
           >
             <option value="" disabled>Tamanho</option>
             <option value="2">Pequeno</option>
@@ -338,7 +351,12 @@ export default function ModeloContrato() {
 
 function ToolBtn({ onClick, children, title }) {
   return (
-    <button style={s.toolBtn} onClick={onClick} title={title}>
+    <button
+      style={s.toolBtn}
+      title={title}
+      // preventDefault no mouseDown impede o editor de perder foco/seleção
+      onMouseDown={(e) => { e.preventDefault(); onClick(); }}
+    >
       {children}
     </button>
   );
