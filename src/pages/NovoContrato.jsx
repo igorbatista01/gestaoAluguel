@@ -1,19 +1,14 @@
-import { useState } from "react";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { useState, useEffect, useCallback } from "react";
+import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, getDoc, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
 
 // ── Máscaras ────────────────────────────────────────────────────────────────
 
-/** Retorna apenas os dígitos da string, limitado a maxLen caracteres. */
 function soDigitos(v, maxLen) {
   return v.replace(/\D/g, "").substring(0, maxLen);
 }
 
-/**
- * Máscara de data DD/MM/AAAA.
- * O usuário só digita números; as barras são inseridas automaticamente.
- */
 function maskDate(value) {
   const d = soDigitos(value, 8);
   if (d.length <= 2) return d;
@@ -21,9 +16,6 @@ function maskDate(value) {
   return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
 }
 
-/**
- * Máscara de CPF: 000.000.000-00
- */
 function maskCPF(value) {
   const d = soDigitos(value, 11);
   if (d.length <= 3) return d;
@@ -32,38 +24,58 @@ function maskCPF(value) {
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
 }
 
-/**
- * Máscara de RG: aceita dígitos e a letra X (alguns estados usam no dígito verificador).
- * Não aplica pontuação — cada estado tem padrão diferente.
- */
 function maskRG(value) {
   return value.replace(/[^\dXx]/g, "").toUpperCase().substring(0, 15);
 }
 
-/** Remove a formatação do CPF para enviar ao backend (somente 11 dígitos). */
+function maskMoney(value) {
+  const digits = soDigitos(String(value), 12);
+  if (!digits) return "";
+  const num = parseInt(digits, 10) / 100;
+  return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function rawCPF(v) { return v.replace(/\D/g, ""); }
-
-/** Remove caracteres não-alfanuméricos do RG. */
 function rawRG(v) { return v.replace(/[^\dXx]/g, "").toUpperCase(); }
+function rawMoney(v) {
+  // "1.500,00" → "1500.00"
+  return String(v).replace(/\./g, "").replace(",", ".");
+}
 
-// ── Constantes ───────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-const IMOVEIS = {
-  "1898": {
-    label: "Estrada Baviera, 1898 (antigo 113A)",
-    casas: ["1", "2", "3", "4"],
-    descCasa: { "1": "2 cômodos", "2": "2 cômodos", "3": "2 cômodos", "4": "2 cômodos" },
-  },
-  "105": {
-    label: "Estrada Baviera, 105",
-    casas: ["1", "2", "3"],
-    descCasa: { "1": "3 cômodos (sala, cozinha, quarto)", "2": "4 cômodos (2 quartos, sala, cozinha)", "3": "2 cômodos (cozinha, quarto)" },
-  },
-};
+function isValidDate(date) {
+  const regex = /^\d{2}\/\d{2}\/\d{4}$/;
+  if (!regex.test(date)) return false;
+  const [d, m, y] = date.split("/").map(Number);
+  if (y < 1000 || y > 3000 || m < 1 || m > 12) return false;
+  const ml = [31, (y % 400 === 0 || (y % 100 !== 0 && y % 4 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return d > 0 && d <= ml[m - 1];
+}
+
+function calcDataFim(inicio, meses) {
+  if (!isValidDate(inicio) || !meses) return "—";
+  const d = new Date(inicio.split("/").reverse().join("/"));
+  d.setMonth(d.getMonth() + parseInt(meses, 10));
+  return d.toLocaleDateString("pt-BR");
+}
+
+function substituirVariaveis(html, vars) {
+  let resultado = html;
+  Object.entries(vars).forEach(([key, value]) => {
+    resultado = resultado.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value || `{{${key}}}`);
+  });
+  // Remove as spans var-chip, mantendo só o conteúdo interno (o {{key}} já foi substituído acima)
+  resultado = resultado.replace(
+    /<span[^>]*class="var-chip"[^>]*contenteditable="false"[^>]*>([\s\S]*?)<\/span>/g,
+    "$1"
+  );
+  return resultado;
+}
+
+// ── StepBar ──────────────────────────────────────────────────────────────────
 
 const STEPS = ["Imóvel", "Locatário", "Contrato", "Revisar"];
-
-// ── Componentes auxiliares ───────────────────────────────────────────────────
 
 function StepBar({ current }) {
   return (
@@ -81,33 +93,124 @@ function StepBar({ current }) {
   );
 }
 
+function ReviewRow({ label, value }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f3f4f6" }}>
+      <span style={{ color: "#6b7280", fontSize: "13px" }}>{label}</span>
+      <span style={{ fontWeight: 500, fontSize: "13px" }}>{value || "—"}</span>
+    </div>
+  );
+}
+
 // ── Componente principal ─────────────────────────────────────────────────────
 
 export default function NovoContrato() {
   const { user } = useAuth();
   const [step, setStep] = useState(1);
-  const [numImovel, setNumImovel] = useState("1898");
-  const [numCasa, setNumCasa] = useState("1");
+
+  // Imóveis do Firestore
+  const [imoveis, setImoveis] = useState([]);
+  const [loadingImoveis, setLoadingImoveis] = useState(true);
+  const [imovelSelecionado, setImovelSelecionado] = useState(null);
+  const [templateHtml, setTemplateHtml] = useState(null); // HTML do modelo associado
+
+  // Modal "imóvel ocupado"
+  const [confirmOcupado, setConfirmOcupado] = useState(false);
+  const [imovelPendente, setImovelPendente] = useState(null);
+
+  // Formulário do locatário
   const [form, setForm] = useState({
     nomeAlugante: "", rg: "", cpf: "", maritalStatus: "solteiro",
     birthdate: "", dataInicioContrato: "", diaPagamento: "", tempoContrato: "24", valorAluguel: "",
   });
+
   const [errors, setErrors] = useState([]);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-
-  // Handlers com máscara
   const handleDate = (key) => (e) => set(key, maskDate(e.target.value));
   const handleCPF = (e) => set("cpf", maskCPF(e.target.value));
   const handleRG = (e) => set("rg", maskRG(e.target.value));
+  const handleMoney = (e) => set("valorAluguel", maskMoney(e.target.value));
+
+  // Carrega imóveis do usuário
+  const carregarImoveis = useCallback(async () => {
+    if (!user) return;
+    setLoadingImoveis(true);
+    try {
+      const q = query(
+        collection(db, "imoveis"),
+        where("uid", "==", user.uid),
+        orderBy("criadoEm", "desc")
+      );
+      const snap = await getDocs(q);
+      setImoveis(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error("Erro ao carregar imóveis:", err);
+    } finally {
+      setLoadingImoveis(false);
+    }
+  }, [user]);
+
+  useEffect(() => { carregarImoveis(); }, [carregarImoveis]);
+
+  // Carrega o template HTML do modelo associado ao imóvel
+  async function carregarTemplate(modeloId) {
+    try {
+      const snap = await getDoc(doc(db, "modelos_contrato", modeloId));
+      if (snap.exists()) return snap.data().conteudo || null;
+    } catch { /* sem template */ }
+    return null;
+  }
+
+  // Clique em um card de imóvel
+  async function selecionarImovel(im) {
+    // Carrega template se existir
+    let tmpl = null;
+    if (im.modeloContratoId) {
+      tmpl = await carregarTemplate(im.modeloContratoId);
+    }
+    setTemplateHtml(tmpl);
+
+    // Se imóvel ocupado, mostra modal de confirmação
+    if (im.inquilino?.nome) {
+      setImovelPendente({ im, tmpl });
+      setConfirmOcupado(true);
+      return;
+    }
+
+    setImovelSelecionado(im);
+    setStep(2);
+  }
+
+  // Usuário decide o que fazer com imóvel ocupado
+  function confirmarOcupado(usarExistente) {
+    const { im, tmpl } = imovelPendente;
+    setConfirmOcupado(false);
+    setImovelPendente(null);
+    setTemplateHtml(tmpl);
+    setImovelSelecionado(im);
+
+    if (usarExistente && im.inquilino) {
+      setForm((f) => ({
+        ...f,
+        nomeAlugante: im.inquilino.nome || "",
+        rg: im.inquilino.rg || "",
+        cpf: im.inquilino.cpf || "",
+        maritalStatus: im.inquilino.estadoCivil || "solteiro",
+        birthdate: im.inquilino.dataNascimento || "",
+      }));
+    } else {
+      setForm((f) => ({ ...f, nomeAlugante: "", rg: "", cpf: "", maritalStatus: "solteiro", birthdate: "" }));
+    }
+    setStep(2);
+  }
 
   function validateStep(n) {
     const errs = [];
     if (n === 1) {
-      if (!numImovel) errs.push("Selecione o imóvel.");
-      if (!numCasa) errs.push("Selecione a casa.");
+      if (!imovelSelecionado) errs.push("Selecione um imóvel.");
     }
     if (n === 2) {
       if (!form.nomeAlugante.trim()) errs.push("Nome obrigatório.");
@@ -137,14 +240,55 @@ export default function NovoContrato() {
     setLoading(true);
     setErrors([]);
     try {
-      // Envia ao backend sem a formatação da máscara
+      const im = imovelSelecionado;
+      const enderecoImovel = [im.logradouro, im.numero, im.complemento, im.bairro, im.cidade, im.estado]
+        .filter(Boolean).join(", ");
+
+      // Monta o mapa de variáveis para substituição no template
+      const vars = {
+        nome_inquilino: form.nomeAlugante,
+        cpf_inquilino: form.cpf,
+        rg_inquilino: form.rg,
+        estado_civil_inquilino: form.maritalStatus,
+        data_nascimento_inquilino: form.birthdate,
+        endereco_imovel: enderecoImovel,
+        logradouro_imovel: im.logradouro || "",
+        numero_imovel: im.numero || "",
+        bairro_imovel: im.bairro || "",
+        cidade_imovel: im.cidade || "",
+        estado_imovel: im.estado || "",
+        cep_imovel: im.cep || "",
+        quartos_imovel: String(im.quartos || ""),
+        area_imovel: im.area ? `${im.area} m²` : "",
+        data_inicio_contrato: form.dataInicioContrato,
+        data_fim_contrato: calcDataFim(form.dataInicioContrato, form.tempoContrato),
+        duracao_contrato: `${form.tempoContrato} meses`,
+        valor_aluguel: `R$ ${form.valorAluguel}`,
+        dia_pagamento: form.diaPagamento,
+        nome_proprietario: user?.displayName || user?.email || "",
+        email_proprietario: user?.email || "",
+      };
+
       const body = {
-        ...form,
+        nomeAlugante: form.nomeAlugante,
         rg: rawRG(form.rg),
         cpf: rawCPF(form.cpf),
-        numImovel,
-        numCasa,
+        maritalStatus: form.maritalStatus,
+        birthdate: form.birthdate,
+        dataInicioContrato: form.dataInicioContrato,
+        diaPagamento: form.diaPagamento,
+        tempoContrato: form.tempoContrato,
+        valorAluguel: rawMoney(form.valorAluguel),
+        // Campos legados que o backend ainda pode usar se não tiver customHtml
+        numImovel: im.logradouro || "imovel",
+        numCasa: im.numero || "1",
       };
+
+      // Se há template, substitui variáveis e envia como customHtml
+      if (templateHtml) {
+        body.customHtml = substituirVariaveis(templateHtml, vars);
+      }
+
       const res = await fetch("/api/generate-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -168,12 +312,15 @@ export default function NovoContrato() {
       await addDoc(collection(db, "contratos"), {
         ...body,
         uid: user.uid,
+        imovelId: im.id,
+        enderecoImovel: enderecoImovel,
         criadoEm: serverTimestamp(),
         dataFim: calcDataFim(form.dataInicioContrato, form.tempoContrato),
       });
 
       setSuccess(true);
     } catch (err) {
+      console.error(err);
       setErrors(["Erro inesperado. Tente novamente."]);
     } finally {
       setLoading(false);
@@ -182,11 +329,19 @@ export default function NovoContrato() {
 
   function novoContrato() {
     setStep(1);
-    setForm({ nomeAlugante: "", rg: "", cpf: "", maritalStatus: "solteiro", birthdate: "", dataInicioContrato: "", diaPagamento: "", tempoContrato: "24", valorAluguel: "" });
-    setNumImovel("1898"); setNumCasa("1"); setSuccess(false); setErrors([]);
+    setImovelSelecionado(null);
+    setTemplateHtml(null);
+    setForm({
+      nomeAlugante: "", rg: "", cpf: "", maritalStatus: "solteiro",
+      birthdate: "", dataInicioContrato: "", diaPagamento: "", tempoContrato: "24", valorAluguel: "",
+    });
+    setSuccess(false);
+    setErrors([]);
   }
 
-  const imovelInfo = IMOVEIS[numImovel];
+  const enderecoDisplay = imovelSelecionado
+    ? [imovelSelecionado.logradouro, imovelSelecionado.numero].filter(Boolean).join(", ")
+    : "";
 
   return (
     <div style={s.wrap}>
@@ -212,32 +367,55 @@ export default function NovoContrato() {
           {step === 1 && (
             <div style={s.section}>
               <p style={s.sectionTitle}>Selecione o imóvel</p>
-              <div style={s.imovelGrid}>
-                {Object.entries(IMOVEIS).map(([num, info]) => (
-                  <div key={num} onClick={() => { setNumImovel(num); setNumCasa("1"); }}
-                    style={{ ...s.imovelCard, ...(numImovel === num ? s.imovelCardActive : {}) }}>
-                    <div style={s.imovelCardTitle}>Estrada Baviera, {num}</div>
-                    <div style={s.imovelCardSub}>{info.casas.length} casas disponíveis</div>
-                  </div>
-                ))}
-              </div>
 
-              <p style={{ ...s.sectionTitle, marginTop: "1.5rem" }}>Selecione a casa</p>
-              <div style={s.casaGrid}>
-                {imovelInfo.casas.map((c) => (
-                  <div key={c} onClick={() => setNumCasa(c)}
-                    style={{ ...s.casaBtn, ...(numCasa === c ? s.casaBtnActive : {}) }}>
-                    <div style={{ fontWeight: 600 }}>Casa {c}</div>
-                    <div style={{ fontSize: "12px", color: numCasa === c ? "#bfdbfe" : "#9ca3af", marginTop: "4px" }}>
-                      {imovelInfo.descCasa[c]}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {loadingImoveis ? (
+                <p style={{ color: "#9ca3af", fontSize: "14px" }}>Carregando imóveis...</p>
+              ) : imoveis.length === 0 ? (
+                <div style={s.emptyBox}>
+                  <p style={{ color: "#6b7280", fontSize: "14px", margin: 0 }}>
+                    Nenhum imóvel cadastrado. Cadastre um imóvel antes de gerar um contrato.
+                  </p>
+                  <a href="/imoveis" style={{ color: "#2563eb", fontSize: "14px", fontWeight: 600 }}>
+                    Ir para Imóveis →
+                  </a>
+                </div>
+              ) : (
+                <div style={s.imovelGrid}>
+                  {imoveis.map((im) => {
+                    const endereco = [im.logradouro, im.numero].filter(Boolean).join(", ");
+                    const ocupado = Boolean(im.inquilino?.nome);
+                    const temModelo = Boolean(im.modeloContratoId);
+                    return (
+                      <div
+                        key={im.id}
+                        onClick={() => selecionarImovel(im)}
+                        style={{
+                          ...s.imovelCard,
+                          ...(imovelSelecionado?.id === im.id ? s.imovelCardActive : {}),
+                        }}
+                      >
+                        <div style={s.imovelCardTitle}>{endereco || "Imóvel sem endereço"}</div>
+                        {im.bairro && <div style={s.imovelCardSub}>{im.bairro}{im.cidade ? ` — ${im.cidade}` : ""}</div>}
+                        <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
+                          {ocupado && (
+                            <span style={s.tagOcupado}>🔴 Ocupado</span>
+                          )}
+                          {!ocupado && (
+                            <span style={s.tagLivre}>🟢 Livre</span>
+                          )}
+                          {temModelo && (
+                            <span style={s.tagModelo}>📄 Com modelo</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               <div style={s.actions}>
                 <span />
-                <button onClick={next} style={s.btn}>Próximo →</button>
+                <button onClick={next} style={s.btn} disabled={imoveis.length === 0}>Próximo →</button>
               </div>
             </div>
           )}
@@ -246,6 +424,12 @@ export default function NovoContrato() {
           {step === 2 && (
             <div style={s.section}>
               <p style={s.sectionTitle}>Dados do locatário</p>
+              {imovelSelecionado && (
+                <div style={s.imovelInfo}>
+                  📍 <strong>{enderecoDisplay}</strong>
+                  {templateHtml && <span style={s.tagModelo}> 📄 Modelo associado</span>}
+                </div>
+              )}
               <div style={s.formGroup}>
                 <label style={s.label}>Nome completo</label>
                 <input
@@ -336,15 +520,17 @@ export default function NovoContrato() {
               </div>
               <div style={s.grid2}>
                 <div style={s.formGroup}>
-                  <label style={s.label}>Valor do aluguel (R$)</label>
-                  <input
-                    type="number"
-                    value={form.valorAluguel}
-                    onChange={(e) => set("valorAluguel", e.target.value)}
-                    placeholder="700"
-                    min="0"
-                    style={s.input}
-                  />
+                  <label style={s.label}>Valor do aluguel</label>
+                  <div style={s.moneyWrap}>
+                    <span style={s.moneyPrefix}>R$</span>
+                    <input
+                      value={form.valorAluguel}
+                      onChange={handleMoney}
+                      placeholder="1.500,00"
+                      inputMode="numeric"
+                      style={{ ...s.input, paddingLeft: "36px" }}
+                    />
+                  </div>
                 </div>
                 <div style={s.formGroup}>
                   <label style={s.label}>Dia de vencimento</label>
@@ -371,8 +557,9 @@ export default function NovoContrato() {
             <div style={s.section}>
               <p style={s.sectionTitle}>Revise os dados antes de gerar</p>
               <div style={s.reviewGrid}>
-                <ReviewRow label="Imóvel" value={`Estrada Baviera, ${numImovel} — Casa ${numCasa}`} />
-                <ReviewRow label="Descrição" value={IMOVEIS[numImovel].descCasa[numCasa]} />
+                <ReviewRow label="Imóvel" value={enderecoDisplay} />
+                <ReviewRow label="Bairro/Cidade" value={[imovelSelecionado?.bairro, imovelSelecionado?.cidade].filter(Boolean).join(" — ")} />
+                <ReviewRow label="Modelo de contrato" value={templateHtml ? "Sim (modelo personalizado)" : "Contrato padrão"} />
                 <ReviewRow label="Locatário" value={form.nomeAlugante} />
                 <ReviewRow label="RG" value={form.rg} />
                 <ReviewRow label="CPF" value={form.cpf} />
@@ -394,37 +581,46 @@ export default function NovoContrato() {
           )}
         </>
       )}
+
+      {/* ── Modal: imóvel ocupado ── */}
+      {confirmOcupado && imovelPendente && (
+        <div style={s.overlay}>
+          <div style={s.modal}>
+            <h3 style={s.modalTitle}>Imóvel já ocupado</h3>
+            <p style={s.modalText}>
+              Este imóvel já tem um inquilino cadastrado:{" "}
+              <strong>{imovelPendente.im.inquilino?.nome}</strong>.
+              Como deseja prosseguir?
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <button
+                style={s.btnOpcao}
+                onClick={() => confirmarOcupado(true)}
+              >
+                Usar dados de <strong style={{ marginLeft: "4px" }}>{imovelPendente.im.inquilino?.nome}</strong>
+              </button>
+              <button
+                style={{ ...s.btnOpcao, background: "#f9fafb", color: "#374151" }}
+                onClick={() => confirmarOcupado(false)}
+              >
+                Preencher manualmente
+              </button>
+            </div>
+            <button
+              style={s.btnCancelar}
+              onClick={() => { setConfirmOcupado(false); setImovelPendente(null); }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
-
-function ReviewRow({ label, value }) {
-  return (
-    <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #f3f4f6" }}>
-      <span style={{ color: "#6b7280", fontSize: "13px" }}>{label}</span>
-      <span style={{ fontWeight: 500, fontSize: "13px" }}>{value || "—"}</span>
-    </div>
-  );
-}
-
-function isValidDate(date) {
-  const regex = /^\d{2}\/\d{2}\/\d{4}$/;
-  if (!regex.test(date)) return false;
-  const [d, m, y] = date.split("/").map(Number);
-  if (y < 1000 || y > 3000 || m < 1 || m > 12) return false;
-  const ml = [31, (y % 400 === 0 || (y % 100 !== 0 && y % 4 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return d > 0 && d <= ml[m - 1];
-}
-
-function calcDataFim(inicio, meses) {
-  if (!isValidDate(inicio) || !meses) return "—";
-  const d = new Date(inicio.split("/").reverse().join("/"));
-  d.setMonth(d.getMonth() + parseInt(meses, 10));
-  return d.toLocaleDateString("pt-BR");
 }
 
 const s = {
-  wrap: { maxWidth: "640px", margin: "0 auto", padding: "2rem 1rem" },
+  wrap: { maxWidth: "680px", margin: "0 auto", padding: "2rem 1rem" },
   title: { fontSize: "22px", fontWeight: 700, marginBottom: "1.5rem" },
   stepBar: { display: "flex", gap: "0", marginBottom: "2rem", borderRadius: "10px", overflow: "hidden", border: "1px solid #e5e7eb" },
   step: { flex: 1, padding: "10px 8px", textAlign: "center", fontSize: "13px", background: "#f9fafb", color: "#9ca3af", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", borderRight: "1px solid #e5e7eb" },
@@ -435,21 +631,32 @@ const s = {
   successBox: { textAlign: "center", padding: "3rem 2rem", background: "#f0fdf4", borderRadius: "16px" },
   section: { background: "#fff", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" },
   sectionTitle: { fontWeight: 600, fontSize: "15px", marginBottom: "1rem", color: "#111827" },
-  imovelGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" },
+  imovelInfo: { background: "#eff6ff", borderRadius: "8px", padding: "8px 12px", marginBottom: "1rem", fontSize: "13px", color: "#1e40af" },
+  emptyBox: { display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "12px", padding: "1rem 0" },
+  imovelGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px" },
   imovelCard: { border: "2px solid #e5e7eb", borderRadius: "12px", padding: "1rem", cursor: "pointer", transition: "all .15s" },
   imovelCardActive: { border: "2px solid #2563eb", background: "#eff6ff" },
-  imovelCardTitle: { fontWeight: 600, fontSize: "14px" },
+  imovelCardTitle: { fontWeight: 600, fontSize: "14px", color: "#111827" },
   imovelCardSub: { fontSize: "12px", color: "#6b7280", marginTop: "4px" },
-  casaGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "10px" },
-  casaBtn: { border: "2px solid #e5e7eb", borderRadius: "10px", padding: "12px", cursor: "pointer", textAlign: "center", fontSize: "14px", transition: "all .15s" },
-  casaBtnActive: { border: "2px solid #2563eb", background: "#1d4ed8", color: "white" },
+  tagOcupado: { fontSize: "11px", background: "#fee2e2", color: "#991b1b", borderRadius: "20px", padding: "2px 8px", fontWeight: 600 },
+  tagLivre: { fontSize: "11px", background: "#dcfce7", color: "#166534", borderRadius: "20px", padding: "2px 8px", fontWeight: 600 },
+  tagModelo: { fontSize: "11px", background: "#ede9fe", color: "#5b21b6", borderRadius: "20px", padding: "2px 8px", fontWeight: 600 },
   formGroup: { display: "flex", flexDirection: "column", gap: "4px", marginBottom: "1rem" },
   label: { fontSize: "13px", fontWeight: 600, color: "#374151" },
   hint: { fontSize: "11px", color: "#9ca3af", marginTop: "2px" },
   input: { padding: "10px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "14px", width: "100%", boxSizing: "border-box" },
+  moneyWrap: { position: "relative" },
+  moneyPrefix: { position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "14px", color: "#6b7280", pointerEvents: "none" },
   grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" },
   reviewGrid: { display: "flex", flexDirection: "column", marginBottom: "1.5rem" },
   actions: { display: "flex", justifyContent: "space-between", marginTop: "1.5rem", gap: "8px" },
   btn: { background: "#2563eb", color: "#fff", border: "none", padding: "11px 24px", borderRadius: "8px", fontWeight: 600, fontSize: "14px", cursor: "pointer" },
   btnSecondary: { background: "#f9fafb", color: "#374151", border: "1px solid #e5e7eb", padding: "11px 20px", borderRadius: "8px", fontWeight: 500, fontSize: "14px", cursor: "pointer" },
+  // Modal ocupado
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "1rem" },
+  modal: { background: "#fff", borderRadius: "16px", padding: "1.75rem", maxWidth: "420px", width: "100%" },
+  modalTitle: { fontSize: "18px", fontWeight: 700, margin: "0 0 0.75rem" },
+  modalText: { fontSize: "14px", color: "#374151", margin: "0 0 1.25rem", lineHeight: 1.6 },
+  btnOpcao: { background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", padding: "12px 16px", borderRadius: "10px", fontWeight: 600, fontSize: "14px", cursor: "pointer", textAlign: "left", width: "100%" },
+  btnCancelar: { marginTop: "12px", background: "none", border: "none", color: "#9ca3af", fontSize: "13px", cursor: "pointer", width: "100%", textAlign: "center", padding: "6px" },
 };

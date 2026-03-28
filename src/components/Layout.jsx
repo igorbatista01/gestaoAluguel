@@ -24,6 +24,9 @@ export default function Layout({ children }) {
           <NavLink to="/historico" style={({ isActive }) => ({ ...s.link, ...(isActive ? s.linkActive : {}) })}>
             Histórico
           </NavLink>
+          <NavLink to="/modelos" style={({ isActive }) => ({ ...s.link, ...(isActive ? s.linkActive : {}) })}>
+            Modelos
+          </NavLink>
           {nivel === "ADMIN" && (
             <NavLink to="/admin" style={({ isActive }) => ({ ...s.link, ...(isActive ? s.linkActive : {}) })}>
               Admin

@@ -15,10 +15,13 @@ const isValidDay = (day) => /^([1-9]|[12]\d|3[01])$/.test(day);
 
 function validateBody(data) {
   const errors = [];
-  if (!["1898", "105"].includes(data.numImovel)) errors.push("Imóvel inválido.");
-  if (!data.numCasa) errors.push("Selecione a casa.");
-  if (data.numImovel === "105" && !["1","2","3"].includes(data.numCasa)) errors.push("Para 105, casas 1, 2 ou 3.");
-  if (data.numImovel === "1898" && !["1","2","3","4"].includes(data.numCasa)) errors.push("Para 1898, casas 1 a 4.");
+  // Se customHtml for fornecido, pulamos validações de imóvel específico
+  if (!data.customHtml) {
+    if (!["1898", "105"].includes(data.numImovel)) errors.push("Imóvel inválido.");
+    if (!data.numCasa) errors.push("Selecione a casa.");
+    if (data.numImovel === "105" && !["1","2","3"].includes(data.numCasa)) errors.push("Para 105, casas 1, 2 ou 3.");
+    if (data.numImovel === "1898" && !["1","2","3","4"].includes(data.numCasa)) errors.push("Para 1898, casas 1 a 4.");
+  }
   if (!data.nomeAlugante) errors.push("Nome obrigatório.");
   if (!isValidRG(data.rg || "")) errors.push("RG inválido.");
   if (!isValidCPF(data.cpf || "")) errors.push("CPF inválido.");
@@ -33,12 +36,13 @@ function validateBody(data) {
 
 function gerarPDFBuffer(data) {
   return new Promise((resolve, reject) => {
-    const html = buildContratoHtml(data);
+    // Se customHtml foi fornecido (modelo personalizado), usa ele diretamente
+    // Senão, gera o HTML padrão via buildContratoHtml
+    const html = data.customHtml || buildContratoHtml(data);
 
-    // Extrai o conteúdo do <p>
+    // Extrai o conteúdo do <p> (ou usa o html inteiro como body)
     const pMatch = html.match(/<p>([\s\S]*?)<\/p>/);
-    if (!pMatch) return reject(new Error("Falha ao processar contrato."));
-    const rawBody = pMatch[1];
+    const rawBody = pMatch ? pMatch[1] : html;
 
     // Divide em seções por <br><br>
     const sections = rawBody.split(/<br>\s*<br>/);

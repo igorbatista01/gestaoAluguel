@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
 
@@ -80,16 +80,51 @@ export default function Imovel() {
 
   const [buscandoCEP, setBuscandoCEP] = useState(false);
 
+  // Modelo de contrato
+  const [modelos, setModelos] = useState([]);
+  const [modeloNome, setModeloNome] = useState(null);
+  const [selecionandoModelo, setSelecionandoModelo] = useState(false);
+  const [savingModelo, setSavingModelo] = useState(false);
+
   useEffect(() => {
     async function carregar() {
       const snap = await getDoc(doc(db, "imoveis", id));
       if (!snap.exists()) { setNotFound(true); setLoading(false); return; }
       const d = { id: snap.id, ...snap.data() };
       setDados(d);
+      // Carrega nome do modelo associado
+      if (d.modeloContratoId) {
+        const mSnap = await getDoc(doc(db, "modelos_contrato", d.modeloContratoId));
+        if (mSnap.exists()) setModeloNome(mSnap.data().nome);
+      }
       setLoading(false);
     }
     carregar();
   }, [id]);
+
+  async function abrirSelectorModelo() {
+    const q = query(collection(db, "modelos_contrato"), where("uid", "==", user.uid));
+    const snap = await getDocs(q);
+    setModelos(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    setSelecionandoModelo(true);
+  }
+
+  async function associarModelo(modeloId, nome) {
+    setSavingModelo(true);
+    await updateDoc(doc(db, "imoveis", id), { modeloContratoId: modeloId, atualizadoEm: serverTimestamp() });
+    setDados((d) => ({ ...d, modeloContratoId: modeloId }));
+    setModeloNome(nome);
+    setSelecionandoModelo(false);
+    setSavingModelo(false);
+  }
+
+  async function removerModelo() {
+    setSavingModelo(true);
+    await updateDoc(doc(db, "imoveis", id), { modeloContratoId: null, atualizadoEm: serverTimestamp() });
+    setDados((d) => ({ ...d, modeloContratoId: null }));
+    setModeloNome(null);
+    setSavingModelo(false);
+  }
 
   const podeEditar = nivel === "ADMIN" || (dados && dados.uid === user?.uid);
 
@@ -394,6 +429,91 @@ export default function Imovel() {
           </div>
         )}
       </div>
+
+      {/* ── Card de Modelo de Contrato ── */}
+      {podeEditar && (
+        <div style={s.section}>
+          <div style={s.sectionHeader}>
+            <h3 style={s.sectionTitle}>Modelo de contrato</h3>
+            <div style={{ display: "flex", gap: "8px" }}>
+              {dados.modeloContratoId && (
+                <button
+                  style={s.dangerBtn}
+                  onClick={removerModelo}
+                  disabled={savingModelo}
+                >
+                  Remover
+                </button>
+              )}
+              <button style={s.editBtn} onClick={abrirSelectorModelo} disabled={savingModelo}>
+                {dados.modeloContratoId ? "Trocar" : "Associar modelo"}
+              </button>
+            </div>
+          </div>
+
+          {dados.modeloContratoId ? (
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span style={s.modeloBadge}>📄 {modeloNome || "Modelo associado"}</span>
+              <Link to={`/modelos/${dados.modeloContratoId}`} style={{ fontSize: "13px", color: "#2563eb" }}>
+                Editar modelo →
+              </Link>
+            </div>
+          ) : (
+            <p style={s.emptyText}>
+              Nenhum modelo associado.{" "}
+              <Link to="/modelos/novo" style={{ color: "#2563eb" }}>Criar um modelo</Link>
+              {" "}ou associe um existente.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ── Modal seleção de modelo ── */}
+      {selecionandoModelo && (
+        <div style={s.overlay}>
+          <div style={s.modal}>
+            <h3 style={{ fontSize: "18px", fontWeight: 700, margin: "0 0 1rem" }}>
+              Selecionar modelo de contrato
+            </h3>
+            {modelos.length === 0 ? (
+              <div>
+                <p style={{ fontSize: "14px", color: "#6b7280", margin: "0 0 1rem" }}>
+                  Você não tem modelos criados ainda.
+                </p>
+                <Link to="/modelos/novo" style={{ color: "#2563eb", fontSize: "14px" }}>
+                  + Criar novo modelo
+                </Link>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "280px", overflowY: "auto", marginBottom: "1rem" }}>
+                {modelos.map((m) => (
+                  <button
+                    key={m.id}
+                    style={{
+                      ...s.modeloOpcao,
+                      ...(dados.modeloContratoId === m.id ? s.modeloOpcaoAtivo : {}),
+                    }}
+                    onClick={() => associarModelo(m.id, m.nome)}
+                  >
+                    <span style={{ fontWeight: 600 }}>📄 {m.nome}</span>
+                    {dados.modeloContratoId === m.id && (
+                      <span style={{ fontSize: "12px", color: "#16a34a" }}>✓ Atual</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
+              <button style={s.btnSec} onClick={() => setSelecionandoModelo(false)}>
+                Cancelar
+              </button>
+              <Link to="/modelos/novo" style={{ ...s.btn, textDecoration: "none", fontSize: "13px", padding: "8px 16px" }}>
+                + Novo modelo
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -433,4 +553,9 @@ const s = {
   badge: { padding: "3px 8px", borderRadius: "20px", fontSize: "12px", fontWeight: 600 },
   badgeOcup: { background: "#fee2e2", color: "#991b1b" },
   badgeLivre: { background: "#dcfce7", color: "#15803d" },
+  modeloBadge: { background: "#eff6ff", color: "#1d4ed8", padding: "5px 12px", borderRadius: "8px", fontSize: "14px", fontWeight: 600 },
+  modeloOpcao: { background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "10px 14px", cursor: "pointer", textAlign: "left", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "14px", color: "#374151" },
+  modeloOpcaoAtivo: { background: "#eff6ff", border: "1px solid #93c5fd" },
+  overlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "1rem" },
+  modal: { background: "#fff", borderRadius: "16px", padding: "1.75rem", maxWidth: "440px", width: "100%" },
 };
