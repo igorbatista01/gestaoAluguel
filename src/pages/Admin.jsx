@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
-  collection, getDocs, doc, updateDoc, setDoc,
+  collection, getDocs, doc, updateDoc, setDoc, deleteDoc,
   serverTimestamp, query, orderBy,
 } from "firebase/firestore";
 import { db } from "../lib/firebase";
@@ -37,6 +37,7 @@ export default function Admin() {
   const [loadingCodes, setLoadingCodes] = useState(true);
   const [gerando, setGerando] = useState(false);
   const [copiado, setCopiado] = useState(null);
+  const [removendo, setRemovendo] = useState(null);
 
   const carregarUsuarios = useCallback(async () => {
     setLoadingUsers(true);
@@ -77,6 +78,17 @@ export default function Admin() {
       await carregarCodigos();
     } finally {
       setGerando(false);
+    }
+  }
+
+  async function removerCodigo(id) {
+    if (!window.confirm(`Remover o código "${id}"? Esta ação não pode ser desfeita.`)) return;
+    setRemovendo(id);
+    try {
+      await deleteDoc(doc(db, "codigos", id));
+      setCodigos((prev) => prev.filter((c) => c.id !== id));
+    } finally {
+      setRemovendo(null);
     }
   }
 
@@ -179,35 +191,59 @@ export default function Admin() {
                     <th style={s.th}>Status</th>
                     <th style={s.th}>Gerado em</th>
                     <th style={s.th}>Usado em</th>
+                    <th style={s.th}>Usado por</th>
+                    <th style={s.th}></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {codigos.map((c) => (
-                    <tr key={c.id} style={s.tr}>
-                      <td style={s.td}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                          <span style={s.code}>{c.id}</span>
+                  {codigos.map((c) => {
+                    const usouUser = c.usadoPor
+                      ? usuarios.find((u) => u.id === c.usadoPor)
+                      : null;
+                    return (
+                      <tr key={c.id} style={s.tr}>
+                        <td style={s.td}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <span style={s.code}>{c.id}</span>
+                            {!c.usado && (
+                              <button
+                                style={s.btnCopy}
+                                onClick={() => copiar(c.id)}
+                                title="Copiar código"
+                              >
+                                {copiado === c.id ? "✓" : "Copiar"}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        <td style={s.td}>
+                          {c.usado
+                            ? <span style={{ ...s.badge, background: "#f3f4f6", color: "#9ca3af" }}>Usado</span>
+                            : <span style={{ ...s.badge, background: "#dcfce7", color: "#15803d" }}>Disponível</span>
+                          }
+                        </td>
+                        <td style={{ ...s.td, color: "#6b7280", fontSize: "13px" }}>{fmtData(c.criadoEm)}</td>
+                        <td style={{ ...s.td, color: "#6b7280", fontSize: "13px" }}>{c.usado ? fmtData(c.usadoEm) : "—"}</td>
+                        <td style={{ ...s.td, fontSize: "13px" }}>
+                          {usouUser
+                            ? <span title={usouUser.email}>{usouUser.nomeCompleto || usouUser.email}</span>
+                            : <span style={{ color: "#9ca3af" }}>—</span>}
+                        </td>
+                        <td style={s.td}>
                           {!c.usado && (
                             <button
-                              style={s.btnCopy}
-                              onClick={() => copiar(c.id)}
-                              title="Copiar código"
+                              style={s.btnRemover}
+                              onClick={() => removerCodigo(c.id)}
+                              disabled={removendo === c.id}
+                              title="Remover código não utilizado"
                             >
-                              {copiado === c.id ? "✓" : "Copiar"}
+                              {removendo === c.id ? "..." : "Remover"}
                             </button>
                           )}
-                        </div>
-                      </td>
-                      <td style={s.td}>
-                        {c.usado
-                          ? <span style={{ ...s.badge, background: "#f3f4f6", color: "#9ca3af" }}>Usado</span>
-                          : <span style={{ ...s.badge, background: "#dcfce7", color: "#15803d" }}>Disponível</span>
-                        }
-                      </td>
-                      <td style={{ ...s.td, color: "#6b7280", fontSize: "13px" }}>{fmtData(c.criadoEm)}</td>
-                      <td style={{ ...s.td, color: "#6b7280", fontSize: "13px" }}>{c.usado ? fmtData(c.usadoEm) : "—"}</td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -238,4 +274,5 @@ const s = {
   btnGerar: { background: "#2563eb", color: "#fff", border: "none", padding: "8px 16px", borderRadius: "8px", fontWeight: 600, fontSize: "14px", cursor: "pointer" },
   code: { fontFamily: "monospace", fontWeight: 700, fontSize: "15px", letterSpacing: "0.1em", background: "#f9fafb", padding: "3px 8px", borderRadius: "6px" },
   btnCopy: { padding: "3px 8px", borderRadius: "6px", border: "1px solid #d1d5db", background: "#fff", fontSize: "12px", cursor: "pointer", color: "#374151" },
+  btnRemover: { padding: "3px 8px", borderRadius: "6px", border: "1px solid #fca5a5", background: "#fff", fontSize: "12px", cursor: "pointer", color: "#dc2626" },
 };

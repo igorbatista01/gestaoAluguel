@@ -39,33 +39,44 @@ export function AuthProvider({ children }) {
 
   /**
    * Cadastro com código de convite.
-   * 1. Verifica se o código existe e não foi usado.
-   * 2. Cria o usuário no Firebase Auth.
+   * Ordem correta:
+   * 1. Cria o usuário no Firebase Auth (não depende do Firestore).
+   * 2. Já autenticado, valida o código de convite no Firestore.
    * 3. Em batch: cria o perfil em /usuarios/{uid} + marca o código como usado.
+   * Se qualquer passo falhar após a criação do usuário, o usuário é deletado (rollback).
    */
   async function register(email, password, codigo, perfilData) {
-    const codigoRef = doc(db, "codigos", codigo.trim().toUpperCase());
-    const codigoSnap = await getDoc(codigoRef);
-
-    if (!codigoSnap.exists()) throw new Error("Código de convite inválido.");
-    if (codigoSnap.data().usado) throw new Error("Este código já foi utilizado.");
-
+    // Passo 1: cria o usuário no Auth (unauthenticated Firestore reads não são permitidos)
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     const { uid } = cred.user;
 
-    const novoPerfilData = {
-      email,
-      ...perfilData,
-      nivel: "NORMAL",
-      criadoEm: serverTimestamp(),
-    };
+    try {
+      // Passo 2: agora autenticado, valida o código
+      const codigoRef = doc(db, "codigos", codigo.trim().toUpperCase());
+      const codigoSnap = await getDoc(codigoRef);
 
-    const batch = writeBatch(db);
-    batch.set(doc(db, "usuarios", uid), novoPerfilData);
-    batch.update(codigoRef, { usado: true, usadoPor: uid, usadoEm: serverTimestamp() });
-    await batch.commit();
+      if (!codigoSnap.exists()) throw new Error("Código de convite inválido.");
+      if (codigoSnap.data().usado) throw new Error("Este código já foi utilizado.");
 
-    setPerfil({ ...novoPerfilData, nivel: "NORMAL" });
+      // Passo 3: grava perfil e marca código como usado
+      const novoPerfilData = {
+        email,
+        ...perfilData,
+        nivel: "NORMAL",
+        criadoEm: serverTimestamp(),
+      };
+
+      const batch = writeBatch(db);
+      batch.set(doc(db, "usuarios", uid), novoPerfilData);
+      batch.update(codigoRef, { usado: true, usadoPor: uid, usadoEm: serverTimestamp() });
+      await batch.commit();
+
+      setPerfil({ ...novoPerfilData, nivel: "NORMAL" });
+    } catch (e) {
+      // Rollback: remove o usuário do Auth para não deixar conta órfã
+      await cred.user.delete().catch(() => {});
+      throw e;
+    }
   }
 
   return (

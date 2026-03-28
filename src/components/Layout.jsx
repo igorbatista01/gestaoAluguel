@@ -40,7 +40,9 @@ export default function Layout({ children }) {
             </span>
           )}
           <Link to="/perfil" style={s.perfilLink}>
-            {perfil?.nomeCompleto ? perfil.nomeCompleto.split(" ")[0] : user?.email}
+            {perfil?.nomeCompleto
+              ? perfil.nomeCompleto.split(" ")[0]
+              : user?.displayName?.split(" ")[0] || user?.email}
           </Link>
           <button onClick={handleLogout} style={s.logoutBtn}>Sair</button>
         </div>
