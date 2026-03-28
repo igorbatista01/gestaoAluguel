@@ -39,44 +39,33 @@ export function AuthProvider({ children }) {
 
   /**
    * Cadastro com código de convite.
-   * Ordem correta:
-   * 1. Cria o usuário no Firebase Auth (não depende do Firestore).
-   * 2. Já autenticado, valida o código de convite no Firestore.
+   * 1. Verifica o código (leitura pública permitida nas regras do Firestore).
+   * 2. Cria o usuário no Firebase Auth.
    * 3. Em batch: cria o perfil em /usuarios/{uid} + marca o código como usado.
-   * Se qualquer passo falhar após a criação do usuário, o usuário é deletado (rollback).
    */
   async function register(email, password, codigo, perfilData) {
-    // Passo 1: cria o usuário no Auth (unauthenticated Firestore reads não são permitidos)
+    const codigoRef = doc(db, "codigos", codigo.trim().toUpperCase());
+    const codigoSnap = await getDoc(codigoRef);
+
+    if (!codigoSnap.exists()) throw new Error("Código de convite inválido.");
+    if (codigoSnap.data().usado) throw new Error("Este código já foi utilizado.");
+
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     const { uid } = cred.user;
 
-    try {
-      // Passo 2: agora autenticado, valida o código
-      const codigoRef = doc(db, "codigos", codigo.trim().toUpperCase());
-      const codigoSnap = await getDoc(codigoRef);
+    const novoPerfilData = {
+      email,
+      ...perfilData,
+      nivel: "NORMAL",
+      criadoEm: serverTimestamp(),
+    };
 
-      if (!codigoSnap.exists()) throw new Error("Código de convite inválido.");
-      if (codigoSnap.data().usado) throw new Error("Este código já foi utilizado.");
+    const batch = writeBatch(db);
+    batch.set(doc(db, "usuarios", uid), novoPerfilData);
+    batch.update(codigoRef, { usado: true, usadoPor: uid, usadoEm: serverTimestamp() });
+    await batch.commit();
 
-      // Passo 3: grava perfil e marca código como usado
-      const novoPerfilData = {
-        email,
-        ...perfilData,
-        nivel: "NORMAL",
-        criadoEm: serverTimestamp(),
-      };
-
-      const batch = writeBatch(db);
-      batch.set(doc(db, "usuarios", uid), novoPerfilData);
-      batch.update(codigoRef, { usado: true, usadoPor: uid, usadoEm: serverTimestamp() });
-      await batch.commit();
-
-      setPerfil({ ...novoPerfilData, nivel: "NORMAL" });
-    } catch (e) {
-      // Rollback: remove o usuário do Auth para não deixar conta órfã
-      await cred.user.delete().catch(() => {});
-      throw e;
-    }
+    setPerfil({ ...novoPerfilData, nivel: "NORMAL" });
   }
 
   return (
