@@ -1,8 +1,8 @@
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 
 export default function Layout({ children }) {
-  const { user, nivel, logout } = useAuth();
+  const { user, perfil, nivel, logout } = useAuth();
   const navigate = useNavigate();
 
   async function handleLogout() {
@@ -39,7 +39,9 @@ export default function Layout({ children }) {
               {nivel}
             </span>
           )}
-          <span style={s.userEmail}>{user?.email}</span>
+          <Link to="/perfil" style={s.perfilLink}>
+            {perfil?.nomeCompleto ? perfil.nomeCompleto.split(" ")[0] : user?.email}
+          </Link>
           <button onClick={handleLogout} style={s.logoutBtn}>Sair</button>
         </div>
       </nav>
@@ -63,7 +65,7 @@ const s = {
   levelBadge: { padding: "2px 8px", borderRadius: "20px", fontSize: "11px", fontWeight: 700 },
   levelAdmin: { background: "#ede9fe", color: "#5b21b6" },
   levelPremium: { background: "#fef9c3", color: "#854d0e" },
-  userEmail: { fontSize: "13px", color: "#9ca3af" },
+  perfilLink: { fontSize: "13px", color: "#374151", fontWeight: 600, textDecoration: "none", padding: "5px 10px", borderRadius: "8px", background: "#f3f4f6" },
   logoutBtn: { background: "none", border: "1px solid #e5e7eb", padding: "5px 12px", borderRadius: "6px", fontSize: "13px", cursor: "pointer", color: "#374151" },
   main: { padding: "0" },
 };

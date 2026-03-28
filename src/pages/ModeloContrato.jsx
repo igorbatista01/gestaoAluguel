@@ -86,6 +86,7 @@ export default function ModeloContrato() {
 
   const editorRef = useRef(null);
   const [nome, setNome] = useState("");
+  const [conteudoInicial, setConteudoInicial] = useState(null); // HTML carregado do Firestore
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!isNew);
@@ -95,21 +96,26 @@ export default function ModeloContrato() {
   const [associando, setAssociando] = useState(null);
   const [associandoOk, setAssociandoOk] = useState(false);
 
-  // Carrega modelo existente
+  // Carrega modelo existente do Firestore
   useEffect(() => {
     if (!isNew && id) {
       getDoc(doc(db, "modelos_contrato", id)).then((snap) => {
         if (snap.exists()) {
           const d = snap.data();
           setNome(d.nome || "");
-          if (editorRef.current) {
-            editorRef.current.innerHTML = d.conteudo || "";
-          }
+          setConteudoInicial(d.conteudo || "");
         }
         setLoading(false);
       });
     }
   }, [id, isNew]);
+
+  // Aplica o conteúdo no editor depois que ele estiver montado no DOM
+  useEffect(() => {
+    if (conteudoInicial !== null && editorRef.current) {
+      editorRef.current.innerHTML = conteudoInicial;
+    }
+  }, [conteudoInicial]);
 
   // Executa comando de formatação
   const execCmd = useCallback((cmd, value = null) => {

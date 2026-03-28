@@ -63,7 +63,9 @@ function calcDataFim(inicio, meses) {
 function substituirVariaveis(html, vars) {
   let resultado = html;
   Object.entries(vars).forEach(([key, value]) => {
-    resultado = resultado.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), value || `{{${key}}}`);
+    // Usa String(value) para não cair no fallback quando value é "" (string vazia é falsy)
+    const substituto = (value !== undefined && value !== null) ? String(value) : `{{${key}}}`;
+    resultado = resultado.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), substituto);
   });
   // Remove as spans var-chip, mantendo só o conteúdo interno (o {{key}} já foi substituído acima)
   resultado = resultado.replace(

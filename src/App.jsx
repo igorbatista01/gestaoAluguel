@@ -11,6 +11,7 @@ import NovoImovel from "./pages/NovoImovel";
 import Imovel from "./pages/Imovel";
 import ModelosContrato from "./pages/ModelosContrato";
 import ModeloContrato from "./pages/ModeloContrato";
+import Perfil from "./pages/Perfil";
 
 function PrivateRoute({ children }) {
   const { user } = useAuth();
@@ -55,6 +56,9 @@ export default function App() {
           <Route path="/modelos" element={<PrivateRoute><Layout><ModelosContrato /></Layout></PrivateRoute>} />
           <Route path="/modelos/novo" element={<PrivateRoute><Layout><ModeloContrato /></Layout></PrivateRoute>} />
           <Route path="/modelos/:id" element={<PrivateRoute><Layout><ModeloContrato /></Layout></PrivateRoute>} />
+
+          {/* Perfil */}
+          <Route path="/perfil" element={<PrivateRoute><Layout><Perfil /></Layout></PrivateRoute>} />
 
           {/* Admin */}
           <Route path="/admin" element={<AdminRoute><Layout><Admin /></Layout></AdminRoute>} />
