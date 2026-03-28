@@ -5,22 +5,28 @@ const locador = {
   dataNascimento: "11/10/1972",
 };
 
-function resolveImovelInfo(numImovel, numCasa) {
+function resolveImovelInfo(numImovel, numCasa, fallback) {
+  // Imóveis originais com dados específicos (compatibilidade legada)
   if (numImovel === "1898") {
     return {
-      numImovelFormatado: "1898 (antigo 113A) - ",
+      enderecoFormatado: "Estrada Baviera nº 1898 (antigo 113A) - Embu das Artes - SP - 06825050",
       numComodos: "2",
       aguaLuzIndividual: ".",
     };
   }
 
-  if (numImovel !== "105") throw new Error("Número do imóvel inválido.");
+  if (numImovel === "105") {
+    if (numCasa === "1") return { enderecoFormatado: "Estrada Baviera nº 105, casa 1 - Embu das Artes - SP - 06825050", numComodos: "3", aguaLuzIndividual: "." };
+    if (numCasa === "2") return { enderecoFormatado: "Estrada Baviera nº 105, casa 2 - Embu das Artes - SP - 06825050", numComodos: "4", aguaLuzIndividual: "." };
+    if (numCasa === "3") return { enderecoFormatado: "Estrada Baviera nº 105, casa 3 - Embu das Artes - SP - 06825050", numComodos: "2", aguaLuzIndividual: " por meio do LOCADOR." };
+  }
 
-  if (numCasa === "1") return { numImovelFormatado: "105", numComodos: "3", aguaLuzIndividual: "." };
-  if (numCasa === "2") return { numImovelFormatado: "105", numComodos: "4", aguaLuzIndividual: "." };
-  if (numCasa === "3") return { numImovelFormatado: "105", numComodos: "2", aguaLuzIndividual: " por meio do LOCADOR." };
-
-  throw new Error("Número da casa inválido.");
+  // Fallback genérico: usa o endereço completo enviado pelo frontend
+  return {
+    enderecoFormatado: fallback.enderecoCompleto || [numImovel, numCasa].filter(Boolean).join(", nº "),
+    numComodos: fallback.numComodos || "—",
+    aguaLuzIndividual: ".",
+  };
 }
 
 function dataAtualPorExtenso() {
@@ -35,8 +41,8 @@ function calcularDataFim(dataInicioContrato, tempoContrato) {
   return dataFim.toLocaleDateString("pt-BR");
 }
 
-function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, dataInicioContrato, diaPagamento, tempoContrato, valorAluguel, numImovel, numCasa }) {
-  const { numImovelFormatado, numComodos, aguaLuzIndividual } = resolveImovelInfo(numImovel, numCasa);
+function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, dataInicioContrato, diaPagamento, tempoContrato, valorAluguel, numImovel, numCasa, enderecoCompleto, numComodos: numComodoParam }) {
+  const { enderecoFormatado, numComodos, aguaLuzIndividual } = resolveImovelInfo(numImovel, numCasa, { enderecoCompleto, numComodos: numComodoParam });
   const fimData = calcularDataFim(dataInicioContrato, tempoContrato);
   const dataAtualExtenso = dataAtualPorExtenso();
 
@@ -45,7 +51,7 @@ function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, da
 <br><br>
 <b>LOCATÁRIO:</b> ${nomeAlugante}, brasileiro, ${maritalStatus}, portador da cédula de R.G de nº: ${rg}, e C.P.F de nº ${cpf}, nascido em ${birthdate}
 <br><br>
-<b>CLÁUSULA PRIMEIRA:</b> O objeto deste contrato de locação é o imóvel residencial, situado à Estrada Baviera nº ${numImovelFormatado} casa ${numCasa} - Embu das Artes - SP - 06825050 - ${numComodos} cômodos, banheiro e uma lavanderia de uso individual do LOCATÁRIO.
+<b>CLÁUSULA PRIMEIRA:</b> O objeto deste contrato de locação é o imóvel residencial, situado à ${enderecoFormatado} - ${numComodos} cômodo(s), banheiro e área de serviço de uso individual do LOCATÁRIO.
 <br><br>
 <b>CLÁUSULA SEGUNDA:</b> O prazo da locação é de ${tempoContrato} mes(es), iniciando-se em ${dataInicioContrato} com término em ${fimData}, independentemente de aviso, notificação ou interpelação judicial ou mesmo extrajudicial.
 <br><br>

@@ -3,7 +3,7 @@ import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, ge
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
 import { maskDate, maskCPF, maskRG, maskMoney, rawCPF, rawRG, rawMoney } from "../lib/masks";
-import { isValidDate, calcDataFim } from "../lib/validation";
+import { isValidDate, calcDataFim, ESTADO_CIVIL_OPCOES } from "../lib/validation";
 
 function substituirVariaveis(html, vars) {
   let resultado = html;
@@ -243,9 +243,11 @@ export default function NovoContrato() {
         diaPagamento: form.diaPagamento,
         tempoContrato: form.tempoContrato,
         valorAluguel: rawMoney(form.valorAluguel),
-        // Campos legados que o backend ainda pode usar se não tiver customHtml
-        numImovel: im.logradouro || "imovel",
-        numCasa: im.numero || "1",
+        // Campos usados pelo contrato padrão quando não há template personalizado
+        numImovel: im.logradouro || "",
+        numCasa: im.numero || "",
+        enderecoCompleto: enderecoImovel,
+        numComodos: String(im.quartos || ""),
       };
 
       // Se há template, substitui variáveis e envia como customHtml
@@ -456,8 +458,9 @@ export default function NovoContrato() {
                 <div style={s.formGroup}>
                   <label style={s.label}>Estado civil</label>
                   <select value={form.maritalStatus} onChange={(e) => set("maritalStatus", e.target.value)} style={s.input}>
-                    <option value="solteiro">Solteiro(a)</option>
-                    <option value="casado">Casado(a)</option>
+                    {ESTADO_CIVIL_OPCOES.map(({ value, label }) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
