@@ -31,28 +31,260 @@ function validateBody(data) {
   return errors;
 }
 
-// Converte HTML do editor rico (contenteditable) para linhas de texto simples
-function htmlParaLinhas(html) {
-  return html
-    // Blocos que viram quebra de linha
-    .replace(/<\/div>/gi, "\n")
-    .replace(/<\/p>/gi, "\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    // Remove todas as tags restantes
-    .replace(/<[^>]+>/g, "")
-    // Decodifica entidades HTML
+// ── Renderizador HTML Rico → PDFKit ──────────────────────────────────────────
+//
+// Suporta: negrito, itálico, sublinhado, tamanhos de fonte, alinhamento,
+// listas (bullets e numeradas) e indentação — gerados pelo editor contenteditable.
+
+function decodeEntities(str) {
+  return str
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    // Remove espaços múltiplos (mas preserva quebras de linha)
-    .replace(/[ \t]{2,}/g, " ")
-    // Limita linhas em branco consecutivas a 1
-    .replace(/\n{3,}/g, "\n\n")
-    .trim()
-    .split("\n");
+    .replace(/&#39;/g, "'");
+}
+
+// Tamanhos do execCommand fontSize (1-7) → pontos
+const EXEC_FONT_SIZE = { 1: 8, 2: 9, 3: 10, 4: 12, 5: 16, 6: 20, 7: 28 };
+const DEFAULT_SIZE = 9;
+
+function cssVal(styleStr, prop) {
+  if (!styleStr) return null;
+  const re = new RegExp(prop + "\\s*:\\s*([^;]+)");
+  const m = styleStr.match(re);
+  return m ? m[1].trim() : null;
+}
+
+// Tokeniza HTML em { type, tag, attrs, text }
+function tokenize(html) {
+  const tokens = [];
+  const re = /<!--[\s\S]*?-->|<(\/?)([a-zA-Z][a-zA-Z0-9-]*)((?:\s[^>]*)?)(\s*\/?)>|([^<]+)/g;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    if (m[0].startsWith("<!--")) continue;
+    if (m[5] !== undefined) {
+      const t = decodeEntities(m[5]);
+      if (t) tokens.push({ type: "text", text: t });
+      continue;
+    }
+    const closing = m[1] === "/";
+    const tag = m[2].toLowerCase();
+    const attrStr = m[3] || "";
+    const selfClose = /\/$/.test(m[4] || "");
+    if (closing) { tokens.push({ type: "close", tag }); continue; }
+    const attrs = {};
+    const ar = /([\w-]+)(?:=(?:"([^"]*?)"|'([^']*?)'|(\S+)))?/g;
+    let am;
+    while ((am = ar.exec(attrStr)) !== null) {
+      attrs[am[1].toLowerCase()] =
+        am[2] !== undefined ? am[2] :
+        am[3] !== undefined ? am[3] :
+        am[4] !== undefined ? am[4] : true;
+    }
+    const SELF = ["br","hr","img","input","meta","link","wbr"];
+    tokens.push({ type: (selfClose || SELF.includes(tag)) ? "self" : "open", tag, attrs });
+  }
+  return tokens;
+}
+
+// Mescla stack de formatação → estado atual
+function mergeStack(stack) {
+  const s = { bold: false, italic: false, underline: false, fontSize: DEFAULT_SIZE };
+  for (const f of stack) {
+    if (f.bold      !== undefined) s.bold      = f.bold;
+    if (f.italic    !== undefined) s.italic    = f.italic;
+    if (f.underline !== undefined) s.underline = f.underline;
+    if (f.fontSize  !== undefined) s.fontSize  = f.fontSize;
+  }
+  return s;
+}
+
+/**
+ * Converte HTML do contenteditable em blocos renderizáveis.
+ * Bloco: { runs[], align, indent, bullet }
+ * Run:   { text, bold, italic, underline, fontSize }
+ */
+function htmlToBlocks(html) {
+  const tokens = tokenize(html);
+  const blocks = [];
+  let fmtStack  = [];   // formatação inline acumulada
+  let listStack = [];   // { type:'ul'|'ol', count:0 }
+  let cur       = null; // bloco corrente
+
+  function newBlock(opts) {
+    flush();
+    cur = { runs: [], align: "left", indent: 0, bullet: null, ...opts };
+  }
+  function flush() {
+    if (cur && cur.runs.some(r => r.text.replace(/\n/g, "").trim())) blocks.push(cur);
+    cur = null;
+  }
+  function addText(text) {
+    if (!cur) newBlock();
+    const fmt = mergeStack(fmtStack);
+    const last = cur.runs[cur.runs.length - 1];
+    if (last && last.bold === fmt.bold && last.italic === fmt.italic &&
+        last.underline === fmt.underline && last.fontSize === fmt.fontSize) {
+      last.text += text;
+    } else {
+      cur.runs.push({ text, ...fmt });
+    }
+  }
+
+  for (const tok of tokens) {
+    // ── texto ──
+    if (tok.type === "text") { addText(tok.text); continue; }
+
+    // ── self-closing ──
+    if (tok.type === "self") {
+      if (tok.tag === "br") addText("\n");
+      continue;
+    }
+
+    // ── abertura ──
+    if (tok.type === "open") {
+      const { tag, attrs } = tok;
+      const style = attrs.style || "";
+      switch (tag) {
+        case "div": case "p": {
+          const align = cssVal(style, "text-align") || "left";
+          const ml    = parseFloat(cssVal(style, "margin-left") || "0") || 0;
+          newBlock({ align, indent: Math.min(ml, 200) });
+          fmtStack.push({});
+          break;
+        }
+        case "ul": listStack.push({ type: "ul", count: 0 }); fmtStack.push({}); break;
+        case "ol": listStack.push({ type: "ol", count: 0 }); fmtStack.push({}); break;
+        case "li": {
+          const list   = listStack[listStack.length - 1] || { type: "ul", count: 0 };
+          list.count++;
+          const bullet = list.type === "ul" ? "•" : `${list.count}.`;
+          newBlock({ indent: (listStack.length - 1) * 20, bullet });
+          fmtStack.push({});
+          break;
+        }
+        case "b": case "strong": fmtStack.push({ bold: true });      break;
+        case "i": case "em":    fmtStack.push({ italic: true });    break;
+        case "u":               fmtStack.push({ underline: true }); break;
+        case "font": {
+          const sz = attrs.size ? EXEC_FONT_SIZE[parseInt(attrs.size)] : undefined;
+          fmtStack.push(sz ? { fontSize: sz } : {});
+          break;
+        }
+        case "span": {
+          const f = {};
+          if (/font-weight\s*:\s*bold/i.test(style))               f.bold      = true;
+          if (/font-style\s*:\s*italic/i.test(style))              f.italic    = true;
+          if (/text-decoration[^;]*underline/i.test(style))        f.underline = true;
+          const fsm = style.match(/font-size\s*:\s*([\d.]+)pt/i);
+          if (fsm) f.fontSize = parseFloat(fsm[1]);
+          fmtStack.push(f);
+          break;
+        }
+        case "h1": newBlock({ align: "center" }); fmtStack.push({ bold: true, fontSize: 16 }); break;
+        case "h2": newBlock();                    fmtStack.push({ bold: true, fontSize: 13 }); break;
+        case "h3": newBlock();                    fmtStack.push({ bold: true, fontSize: 11 }); break;
+        default:   fmtStack.push({}); break; // tags desconhecidas são transparentes
+      }
+      continue;
+    }
+
+    // ── fechamento ──
+    if (tok.type === "close") {
+      switch (tok.tag) {
+        case "div": case "p": case "li": case "h1": case "h2": case "h3":
+          flush();
+          if (fmtStack.length) fmtStack.pop();
+          break;
+        case "ul": case "ol":
+          listStack.pop();
+          if (fmtStack.length) fmtStack.pop();
+          break;
+        default:
+          if (fmtStack.length) fmtStack.pop();
+          break;
+      }
+    }
+  }
+  flush();
+  return blocks;
+}
+
+function fontName(bold, italic) {
+  if (bold && italic) return "Helvetica-BoldOblique";
+  if (bold)           return "Helvetica-Bold";
+  if (italic)         return "Helvetica-Oblique";
+  return "Helvetica";
+}
+
+/**
+ * Renderiza HTML rico no doc PDFKit.
+ * Preserva negrito, itálico, sublinhado, tamanho, alinhamento e listas.
+ */
+function renderizarHtmlRico(doc, html) {
+  const blocks   = htmlToBlocks(html);
+  const margins  = doc.page.margins;
+  const pageW    = doc.page.width - margins.left - margins.right;
+
+  for (const block of blocks) {
+    const { runs, align, indent, bullet } = block;
+    // filtra runs sem texto
+    const validos = runs.filter(r => r.text !== "");
+    if (!validos.length) continue;
+    const todoTexto = validos.map(r => r.text).join("");
+    if (!todoTexto.trim()) { doc.moveDown(0.4); continue; }
+
+    const blockW  = pageW - indent;
+    const xStart  = margins.left + indent;
+    const pdfAlign = { center:"center", right:"right", justify:"justify" }[align] || "left";
+    const baseSize = validos.reduce((mx, r) => Math.max(mx, r.fontSize), DEFAULT_SIZE);
+
+    // Expande runs que contêm \n em linhas separadas
+    const linhas = [[]];
+    for (const run of validos) {
+      const partes = run.text.split("\n");
+      linhas[linhas.length - 1].push({ ...run, text: partes[0] });
+      for (let i = 1; i < partes.length; i++) {
+        linhas.push([{ ...run, text: partes[i] }]);
+      }
+    }
+
+    for (let li = 0; li < linhas.length; li++) {
+      const lineRuns = linhas[li].filter(r => r.text !== "");
+      if (!lineRuns.length) { doc.moveDown(0.35); continue; }
+
+      // Prefixo de lista apenas na 1ª linha do bloco
+      const allRuns = [];
+      if (li === 0 && bullet) {
+        allRuns.push({ text: bullet + " ", bold: false, italic: false, underline: false, fontSize: baseSize });
+      }
+      allRuns.push(...lineRuns);
+
+      for (let ri = 0; ri < allRuns.length; ri++) {
+        const run    = allRuns[ri];
+        const isLast = ri === allRuns.length - 1;
+        doc.font(fontName(run.bold, run.italic)).fontSize(run.fontSize);
+
+        const opts = {
+          continued:  !isLast,
+          underline:  run.underline || false,
+          width:      blockW,
+          align:      pdfAlign,
+          lineBreak:  true,
+        };
+
+        if (ri === 0) {
+          doc.text(run.text, xStart, doc.y, opts);
+        } else {
+          doc.text(run.text, opts);
+        }
+      }
+      if (li < linhas.length - 1) doc.moveDown(0.1);
+    }
+    doc.moveDown(0.4);
+  }
 }
 
 function gerarPDFBuffer(data) {
@@ -76,27 +308,8 @@ function gerarPDFBuffer(data) {
     doc.fontSize(9);
 
     if (data.customHtml) {
-      // ── Modelo personalizado: converte HTML rico para texto ──
-      const linhas = htmlParaLinhas(data.customHtml);
-      let paraAtual = [];
-
-      const flushPara = () => {
-        if (paraAtual.length > 0) {
-          doc.font("Helvetica").text(paraAtual.join("\n"), { align: "justify" });
-          doc.moveDown(0.5);
-          paraAtual = [];
-        }
-      };
-
-      for (const linha of linhas) {
-        const t = linha.trim();
-        if (t === "") {
-          flushPara();
-        } else {
-          paraAtual.push(t);
-        }
-      }
-      flushPara();
+      // ── Modelo personalizado: renderiza HTML rico com formatação ──
+      renderizarHtmlRico(doc, data.customHtml);
 
     } else {
       // ── Contrato padrão: HTML gerado por buildContratoHtml ──
