@@ -17,10 +17,7 @@ function validateBody(data) {
   const errors = [];
   // Se customHtml for fornecido, pulamos validações de imóvel específico
   if (!data.customHtml) {
-    if (!["1898", "105"].includes(data.numImovel)) errors.push("Imóvel inválido.");
-    if (!data.numCasa) errors.push("Selecione a casa.");
-    if (data.numImovel === "105" && !["1","2","3"].includes(data.numCasa)) errors.push("Para 105, casas 1, 2 ou 3.");
-    if (data.numImovel === "1898" && !["1","2","3","4"].includes(data.numCasa)) errors.push("Para 1898, casas 1 a 4.");
+    if (!data.numImovel) errors.push("Endereço do imóvel obrigatório.");
   }
   if (!data.nomeAlugante) errors.push("Nome obrigatório.");
   if (!isValidRG(data.rg || "")) errors.push("RG inválido.");

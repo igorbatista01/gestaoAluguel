@@ -1,16 +1,22 @@
 import { useEffect, useState } from "react";
-import { collection, query, orderBy, getDocs } from "firebase/firestore";
+import { collection, query, orderBy, where, getDocs } from "firebase/firestore";
 import { db } from "../lib/firebase";
+import { useAuth } from "../lib/auth";
 
 export default function Historico() {
+  const { user, nivel } = useAuth();
   const [contratos, setContratos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
 
   useEffect(() => {
+    if (!user) return;
     async function load() {
       try {
-        const q = query(collection(db, "contratos"), orderBy("criadoEm", "desc"));
+        // ADMIN vê todos; usuário normal vê só os seus
+        const q = nivel === "ADMIN"
+          ? query(collection(db, "contratos"), orderBy("criadoEm", "desc"))
+          : query(collection(db, "contratos"), where("uid", "==", user.uid), orderBy("criadoEm", "desc"));
         const snap = await getDocs(q);
         setContratos(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (e) {
@@ -20,7 +26,7 @@ export default function Historico() {
       }
     }
     load();
-  }, []);
+  }, [user, nivel]);
 
   const filtrado = contratos.filter((c) =>
     c.nomeAlugante?.toLowerCase().includes(busca.toLowerCase())

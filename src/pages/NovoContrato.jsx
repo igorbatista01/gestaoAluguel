@@ -107,7 +107,7 @@ function ReviewRow({ label, value }) {
 // ── Componente principal ─────────────────────────────────────────────────────
 
 export default function NovoContrato() {
-  const { user } = useAuth();
+  const { user, perfil } = useAuth();
   const [step, setStep] = useState(1);
 
   // Imóveis do Firestore
@@ -273,8 +273,8 @@ export default function NovoContrato() {
         dia_vencimento: form.diaPagamento,
         duracao_meses: form.tempoContrato,
         // Proprietário
-        nome_proprietario: user?.displayName || user?.email || "",
-        cpf_proprietario: "",
+        nome_proprietario: perfil?.nomeCompleto || user?.displayName || user?.email || "",
+        cpf_proprietario: perfil?.cpf || "",
       };
 
       const body = {

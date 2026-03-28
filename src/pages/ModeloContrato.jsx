@@ -127,7 +127,7 @@ export default function ModeloContrato() {
   function inserirVariavel(key) {
     editorRef.current?.focus();
     insertAtCursor(
-      `<span class="var-chip" contenteditable="false" style="display:inline-block;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 6px;font-size:0.85em;font-family:monospace;user-select:none;cursor:default;">${key}</span>`
+      `<span class="var-chip" contenteditable="false" style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 4px 1px 6px;font-size:0.85em;font-family:monospace;user-select:none;cursor:default;">${key}<span class="var-chip-x" style="font-family:sans-serif;font-size:0.9em;opacity:0.55;cursor:pointer;line-height:1;padding:0 1px;" title="Remover variável">×</span></span>`
     );
   }
 
@@ -269,6 +269,13 @@ export default function ModeloContrato() {
             e.preventDefault();
             const text = e.clipboardData.getData("text/plain");
             document.execCommand("insertText", false, text);
+          }}
+          onClick={(e) => {
+            // Remove chip ao clicar no ×
+            if (e.target.classList.contains("var-chip-x")) {
+              const chip = e.target.closest(".var-chip");
+              if (chip) chip.remove();
+            }
           }}
         />
 
