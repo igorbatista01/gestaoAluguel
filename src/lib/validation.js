@@ -20,6 +20,7 @@ export function isValidDate(date) {
  * Retorna a data no formato DD/MM/AAAA.
  */
 export function calcDataFim(dataInicio, meses) {
+  if (!dataInicio || !meses || !isValidDate(dataInicio)) return "—";
   const [d, m, y] = dataInicio.split("/").map(Number);
   const dt = new Date(y, m - 1, d);
   dt.setMonth(dt.getMonth() + parseInt(meses, 10));
