@@ -22,7 +22,9 @@ function validateBody(data) {
   if (!data.nomeAlugante) errors.push("Nome obrigatório.");
   if (!isValidRG(data.rg || "")) errors.push("RG inválido.");
   if (!isValidCPF(data.cpf || "")) errors.push("CPF inválido.");
-  if (!["solteiro","casado"].includes(data.maritalStatus)) errors.push("Estado civil inválido.");
+  // Deve refletir exatamente os valores em src/lib/validation.js → ESTADO_CIVIL_OPCOES
+  const ESTADO_CIVIL_VALIDOS = ["solteiro","casado","divorciado","viuvo","uniao_estavel"];
+  if (!ESTADO_CIVIL_VALIDOS.includes(data.maritalStatus)) errors.push("Estado civil inválido.");
   if (!isValidDate(data.birthdate || "")) errors.push("Data de nascimento inválida.");
   if (!isValidDate(data.dataInicioContrato || "")) errors.push("Data de início inválida.");
   if (!isValidDay(data.diaPagamento || "")) errors.push("Dia de pagamento inválido.");

@@ -3,8 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
-
-const LIMITE_NORMAL = 2;
+import { LIMITE_IMOVEIS_NORMAL } from "../lib/validation";
 
 export default function Imoveis() {
   const { user, nivel } = useAuth();
@@ -32,7 +31,7 @@ export default function Imoveis() {
 
   useEffect(() => { carregar(); }, [carregar]);
 
-  const atingiuLimite = nivel === "NORMAL" && imoveis.length >= LIMITE_NORMAL;
+  const atingiuLimite = nivel === "NORMAL" && imoveis.length >= LIMITE_IMOVEIS_NORMAL;
 
   return (
     <div style={s.wrap}>
@@ -41,7 +40,7 @@ export default function Imoveis() {
         <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
           {atingiuLimite && (
             <span style={s.limitWarn}>
-              Limite de {LIMITE_NORMAL} imóveis atingido (plano NORMAL)
+              Limite de {LIMITE_IMOVEIS_NORMAL} imóveis atingido (plano NORMAL)
             </span>
           )}
           <button

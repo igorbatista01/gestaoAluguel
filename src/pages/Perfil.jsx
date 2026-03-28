@@ -2,43 +2,8 @@ import { useState, useEffect } from "react";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
-
-// ── Máscaras ────────────────────────────────────────────────────────────────
-const soDigitos = (v, max) => v.replace(/\D/g, "").substring(0, max);
-
-function maskDate(v) {
-  const d = soDigitos(v, 8);
-  if (d.length <= 2) return d;
-  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
-  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
-}
-function maskCPF(v) {
-  const d = soDigitos(v, 11);
-  if (d.length <= 3) return d;
-  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
-  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
-}
-const maskRG = (v) => v.replace(/[^\dXx]/g, "").toUpperCase().substring(0, 15);
-const rawCPF = (v) => v.replace(/\D/g, "");
-const rawRG  = (v) => v.replace(/[^\dXx]/g, "").toUpperCase();
-
-function displayCPF(raw) {
-  if (!raw) return "";
-  const d = raw.replace(/\D/g, "");
-  if (d.length <= 3) return d;
-  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
-  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
-}
-
-function isValidDate(date) {
-  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(date)) return false;
-  const [d, m, y] = date.split("/").map(Number);
-  if (y < 1900 || y > 2099 || m < 1 || m > 12) return false;
-  const ml = [31, (y % 400 === 0 || (y % 100 !== 0 && y % 4 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return d > 0 && d <= ml[m - 1];
-}
+import { maskDate, maskCPF, maskRG, rawCPF, rawRG, displayCPF } from "../lib/masks";
+import { isValidDate, ESTADO_CIVIL_OPCOES } from "../lib/validation";
 
 export default function Perfil() {
   const { user, perfil, setPerfil } = useAuth();

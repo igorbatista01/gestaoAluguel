@@ -13,24 +13,24 @@ import ModelosContrato from "./pages/ModelosContrato";
 import ModeloContrato from "./pages/ModeloContrato";
 import Perfil from "./pages/Perfil";
 
-function PrivateRoute({ children }) {
-  const { user } = useAuth();
-  if (user === undefined) return (
+function Carregando() {
+  return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af" }}>
       Carregando...
     </div>
   );
+}
+
+function PrivateRoute({ children }) {
+  const { user } = useAuth();
+  if (user === undefined) return <Carregando />;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
 
 function AdminRoute({ children }) {
   const { user, nivel } = useAuth();
-  if (user === undefined) return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#9ca3af" }}>
-      Carregando...
-    </div>
-  );
+  if (user === undefined) return <Carregando />;
   if (!user) return <Navigate to="/login" replace />;
   if (nivel !== "ADMIN") return <Navigate to="/" replace />;
   return children;

@@ -3,58 +3,12 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
+import { maskCEP, maskCPF, maskDate, maskPhone, maskRG, rawCPF, rawRG, rawPhone, rawCEP, displayCPF, displayPhone } from "../lib/masks";
+import { isValidDate } from "../lib/validation";
 
-// ── Máscaras ─────────────────────────────────────────────────────────────────
-const soDigitos = (v, max) => v.replace(/\D/g, "").substring(0, max);
-
-function maskCEP(v) {
-  const d = soDigitos(v, 8);
-  return d.length <= 5 ? d : `${d.slice(0, 5)}-${d.slice(5)}`;
-}
-function maskCPF(v) {
-  const d = soDigitos(v, 11);
-  if (d.length <= 3) return d;
-  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
-  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
-}
-function maskDate(v) {
-  const d = soDigitos(v, 8);
-  if (d.length <= 2) return d;
-  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
-  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
-}
-function maskPhone(v) {
-  const d = soDigitos(v, 11);
-  if (d.length <= 2) return d;
-  if (d.length <= 7) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-}
-function maskCPFDisplay(cpf) {
-  if (!cpf || cpf.length !== 11) return cpf || "—";
-  return `${cpf.slice(0, 3)}.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-${cpf.slice(9)}`;
-}
-function maskPhoneDisplay(tel) {
-  if (!tel) return "—";
-  const d = tel.replace(/\D/g, "");
-  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return tel;
-}
-const maskRG = (v) => v.replace(/[^\dXx]/g, "").toUpperCase().substring(0, 15);
-const rawCPF = (v) => v.replace(/\D/g, "");
-const rawRG = (v) => v.replace(/[^\dXx]/g, "").toUpperCase();
-const rawPhone = (v) => v.replace(/\D/g, "");
-const rawCEP = (v) => v.replace(/\D/g, "");
-
-function isValidDate(date) {
-  if (!/^\d{2}\/\d{2}\/\d{4}$/.test(date)) return false;
-  const [d, m, y] = date.split("/").map(Number);
-  if (y < 1900 || y > 2099 || m < 1 || m > 12) return false;
-  const ml = [31, (y % 400 === 0 || (y % 100 !== 0 && y % 4 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return d > 0 && d <= ml[m - 1];
-}
+// Aliases de exibição com fallback "—" para campos vazios
+const maskCPFDisplay  = (v) => displayCPF(v)  || "—";
+const maskPhoneDisplay = (v) => displayPhone(v) || "—";
 
 // ── Componente ────────────────────────────────────────────────────────────────
 export default function Imovel() {

@@ -2,63 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, getDoc, doc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
-
-// ── Máscaras ────────────────────────────────────────────────────────────────
-
-function soDigitos(v, maxLen) {
-  return v.replace(/\D/g, "").substring(0, maxLen);
-}
-
-function maskDate(value) {
-  const d = soDigitos(value, 8);
-  if (d.length <= 2) return d;
-  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
-  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
-}
-
-function maskCPF(value) {
-  const d = soDigitos(value, 11);
-  if (d.length <= 3) return d;
-  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
-  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
-}
-
-function maskRG(value) {
-  return value.replace(/[^\dXx]/g, "").toUpperCase().substring(0, 15);
-}
-
-function maskMoney(value) {
-  const digits = soDigitos(String(value), 12);
-  if (!digits) return "";
-  const num = parseInt(digits, 10) / 100;
-  return num.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function rawCPF(v) { return v.replace(/\D/g, ""); }
-function rawRG(v) { return v.replace(/[^\dXx]/g, "").toUpperCase(); }
-function rawMoney(v) {
-  // "1.500,00" → "1500.00"
-  return String(v).replace(/\./g, "").replace(",", ".");
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function isValidDate(date) {
-  const regex = /^\d{2}\/\d{2}\/\d{4}$/;
-  if (!regex.test(date)) return false;
-  const [d, m, y] = date.split("/").map(Number);
-  if (y < 1000 || y > 3000 || m < 1 || m > 12) return false;
-  const ml = [31, (y % 400 === 0 || (y % 100 !== 0 && y % 4 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  return d > 0 && d <= ml[m - 1];
-}
-
-function calcDataFim(inicio, meses) {
-  if (!isValidDate(inicio) || !meses) return "—";
-  const d = new Date(inicio.split("/").reverse().join("/"));
-  d.setMonth(d.getMonth() + parseInt(meses, 10));
-  return d.toLocaleDateString("pt-BR");
-}
+import { maskDate, maskCPF, maskRG, maskMoney, rawCPF, rawRG, rawMoney } from "../lib/masks";
+import { isValidDate, calcDataFim } from "../lib/validation";
 
 function substituirVariaveis(html, vars) {
   let resultado = html;
