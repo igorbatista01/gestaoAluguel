@@ -244,29 +244,35 @@ export default function NovoContrato() {
       const enderecoImovel = [im.logradouro, im.numero, im.complemento, im.bairro, im.cidade, im.estado]
         .filter(Boolean).join(", ");
 
-      // Monta o mapa de variáveis para substituição no template
+      // Monta o mapa de variáveis — chaves idênticas ao VARIAVEIS em ModeloContrato.jsx
       const vars = {
+        // Inquilino
         nome_inquilino: form.nomeAlugante,
-        cpf_inquilino: form.cpf,
         rg_inquilino: form.rg,
-        estado_civil_inquilino: form.maritalStatus,
+        cpf_inquilino: form.cpf,
         data_nascimento_inquilino: form.birthdate,
-        endereco_imovel: enderecoImovel,
+        email_inquilino: "",
+        telefone_inquilino: "",
+        // Imóvel
         logradouro_imovel: im.logradouro || "",
         numero_imovel: im.numero || "",
+        complemento_imovel: im.complemento || "",
         bairro_imovel: im.bairro || "",
         cidade_imovel: im.cidade || "",
         estado_imovel: im.estado || "",
         cep_imovel: im.cep || "",
-        quartos_imovel: String(im.quartos || ""),
-        area_imovel: im.area ? `${im.area} m²` : "",
-        data_inicio_contrato: form.dataInicioContrato,
-        data_fim_contrato: calcDataFim(form.dataInicioContrato, form.tempoContrato),
-        duracao_contrato: `${form.tempoContrato} meses`,
+        num_comodos: String(im.quartos || ""),
+        endereco_completo: enderecoImovel,
+        // Contrato
+        data_contrato: new Date().toLocaleDateString("pt-BR"),
+        data_inicio: form.dataInicioContrato,
+        data_fim: calcDataFim(form.dataInicioContrato, form.tempoContrato),
         valor_aluguel: `R$ ${form.valorAluguel}`,
-        dia_pagamento: form.diaPagamento,
+        dia_vencimento: form.diaPagamento,
+        duracao_meses: form.tempoContrato,
+        // Proprietário
         nome_proprietario: user?.displayName || user?.email || "",
-        email_proprietario: user?.email || "",
+        cpf_proprietario: "",
       };
 
       const body = {

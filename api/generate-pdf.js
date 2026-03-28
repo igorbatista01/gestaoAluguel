@@ -34,19 +34,32 @@ function validateBody(data) {
   return errors;
 }
 
+// Converte HTML do editor rico (contenteditable) para linhas de texto simples
+function htmlParaLinhas(html) {
+  return html
+    // Blocos que viram quebra de linha
+    .replace(/<\/div>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    // Remove todas as tags restantes
+    .replace(/<[^>]+>/g, "")
+    // Decodifica entidades HTML
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    // Remove espaços múltiplos (mas preserva quebras de linha)
+    .replace(/[ \t]{2,}/g, " ")
+    // Limita linhas em branco consecutivas a 1
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .split("\n");
+}
+
 function gerarPDFBuffer(data) {
   return new Promise((resolve, reject) => {
-    // Se customHtml foi fornecido (modelo personalizado), usa ele diretamente
-    // Senão, gera o HTML padrão via buildContratoHtml
-    const html = data.customHtml || buildContratoHtml(data);
-
-    // Extrai o conteúdo do <p> (ou usa o html inteiro como body)
-    const pMatch = html.match(/<p>([\s\S]*?)<\/p>/);
-    const rawBody = pMatch ? pMatch[1] : html;
-
-    // Divide em seções por <br><br>
-    const sections = rawBody.split(/<br>\s*<br>/);
-
     const doc = new PDFDocument({
       size: "A4",
       margins: { top: 70, bottom: 70, left: 70, right: 70 },
@@ -65,41 +78,65 @@ function gerarPDFBuffer(data) {
 
     doc.fontSize(9);
 
-    for (const section of sections) {
-      const trimmed = section.trim();
-      if (!trimmed) continue;
+    if (data.customHtml) {
+      // ── Modelo personalizado: converte HTML rico para texto ──
+      const linhas = htmlParaLinhas(data.customHtml);
+      let paraAtual = [];
 
-      // Sub-partes separadas por <br> simples dentro da seção
-      const subParts = trimmed.split(/<br>/);
+      const flushPara = () => {
+        if (paraAtual.length > 0) {
+          doc.font("Helvetica").text(paraAtual.join("\n"), { align: "justify" });
+          doc.moveDown(0.5);
+          paraAtual = [];
+        }
+      };
 
-      for (const part of subParts) {
-        const p = part.trim();
-        if (!p) continue;
-
-        // Padrão: <b>LABEL:</b> texto restante
-        const boldMatch = p.match(/^<b>([\s\S]*?)<\/b>([\s\S]*)/);
-        if (boldMatch) {
-          const label = boldMatch[1];
-          // Não fazemos trim() para preservar o espaço após o </b>
-          const rest = boldMatch[2].replace(/<[^>]+>/g, "");
-
-          if (rest.trim()) {
-            doc.font("Helvetica-Bold")
-               .text(label, { align: "justify", continued: true })
-               .font("Helvetica")
-               .text(rest, { align: "justify" });
-          } else {
-            doc.font("Helvetica-Bold").text(label, { align: "left" });
-          }
+      for (const linha of linhas) {
+        const t = linha.trim();
+        if (t === "") {
+          flushPara();
         } else {
-          const clean = p.replace(/<[^>]+>/g, "").trim();
-          if (clean) {
-            doc.font("Helvetica").text(clean, { align: "left" });
-          }
+          paraAtual.push(t);
         }
       }
+      flushPara();
 
-      doc.moveDown(0.6);
+    } else {
+      // ── Contrato padrão: HTML gerado por buildContratoHtml ──
+      const html = buildContratoHtml(data);
+      const pMatch = html.match(/<p>([\s\S]*?)<\/p>/);
+      if (!pMatch) { doc.end(); return; }
+      const rawBody = pMatch[1];
+      const sections = rawBody.split(/<br>\s*<br>/);
+
+      for (const section of sections) {
+        const trimmed = section.trim();
+        if (!trimmed) continue;
+
+        const subParts = trimmed.split(/<br>/);
+        for (const part of subParts) {
+          const p = part.trim();
+          if (!p) continue;
+
+          const boldMatch = p.match(/^<b>([\s\S]*?)<\/b>([\s\S]*)/);
+          if (boldMatch) {
+            const label = boldMatch[1];
+            const rest = boldMatch[2].replace(/<[^>]+>/g, "");
+            if (rest.trim()) {
+              doc.font("Helvetica-Bold")
+                 .text(label, { align: "justify", continued: true })
+                 .font("Helvetica")
+                 .text(rest, { align: "justify" });
+            } else {
+              doc.font("Helvetica-Bold").text(label, { align: "left" });
+            }
+          } else {
+            const clean = p.replace(/<[^>]+>/g, "").trim();
+            if (clean) doc.font("Helvetica").text(clean, { align: "left" });
+          }
+        }
+        doc.moveDown(0.6);
+      }
     }
 
     doc.end();
