@@ -67,6 +67,8 @@ function substituirVariaveis(html, vars) {
     const substituto = (value !== undefined && value !== null) ? String(value) : `{{${key}}}`;
     resultado = resultado.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), substituto);
   });
+  // Remove os botões × dos chips antes de processar o chip externo
+  resultado = resultado.replace(/<span[^>]*class="var-chip-x"[^>]*>[\s\S]*?<\/span>/g, "");
   // Remove as spans var-chip, mantendo só o conteúdo interno (o {{key}} já foi substituído acima)
   resultado = resultado.replace(
     /<span[^>]*class="var-chip"[^>]*contenteditable="false"[^>]*>([\s\S]*?)<\/span>/g,
@@ -114,7 +116,9 @@ export default function NovoContrato() {
   const [imoveis, setImoveis] = useState([]);
   const [loadingImoveis, setLoadingImoveis] = useState(true);
   const [imovelSelecionado, setImovelSelecionado] = useState(null);
-  const [templateHtml, setTemplateHtml] = useState(null); // HTML do modelo associado
+  const [templateHtml, setTemplateHtml] = useState(null);   // HTML do modelo associado
+  const [templateId, setTemplateId] = useState(null);       // ID do modelo associado
+  const [templateNome, setTemplateNome] = useState(null);   // Nome do modelo associado
 
   // Modal "imóvel ocupado"
   const [confirmOcupado, setConfirmOcupado] = useState(false);
@@ -157,31 +161,36 @@ export default function NovoContrato() {
 
   useEffect(() => { carregarImoveis(); }, [carregarImoveis]);
 
-  // Carrega o template HTML do modelo associado ao imóvel
+  // Carrega o template do modelo associado ao imóvel
   async function carregarTemplate(modeloId) {
     try {
       const snap = await getDoc(doc(db, "modelos_contrato", modeloId));
-      if (snap.exists()) return snap.data().conteudo || null;
+      if (snap.exists()) {
+        const d = snap.data();
+        return { html: d.conteudo || null, nome: d.nome || null };
+      }
     } catch { /* sem template */ }
-    return null;
+    return { html: null, nome: null };
   }
 
   // Clique em um card de imóvel
   async function selecionarImovel(im) {
     // Carrega template se existir
-    let tmpl = null;
+    let tmpl = { html: null, nome: null };
     if (im.modeloContratoId) {
       tmpl = await carregarTemplate(im.modeloContratoId);
     }
-    setTemplateHtml(tmpl);
 
-    // Se imóvel ocupado, mostra modal de confirmação
+    // Se imóvel ocupado, mostra modal de confirmação (passa tmpl inteiro pro modal)
     if (im.inquilino?.nome) {
       setImovelPendente({ im, tmpl });
       setConfirmOcupado(true);
       return;
     }
 
+    setTemplateHtml(tmpl.html);
+    setTemplateId(im.modeloContratoId || null);
+    setTemplateNome(tmpl.nome);
     setImovelSelecionado(im);
     setStep(2);
   }
@@ -191,7 +200,9 @@ export default function NovoContrato() {
     const { im, tmpl } = imovelPendente;
     setConfirmOcupado(false);
     setImovelPendente(null);
-    setTemplateHtml(tmpl);
+    setTemplateHtml(tmpl.html);
+    setTemplateId(im.modeloContratoId || null);
+    setTemplateNome(tmpl.nome);
     setImovelSelecionado(im);
 
     if (usarExistente && im.inquilino) {
@@ -339,6 +350,8 @@ export default function NovoContrato() {
     setStep(1);
     setImovelSelecionado(null);
     setTemplateHtml(null);
+    setTemplateId(null);
+    setTemplateNome(null);
     setForm({
       nomeAlugante: "", rg: "", cpf: "", maritalStatus: "solteiro",
       birthdate: "", dataInicioContrato: "", diaPagamento: "", tempoContrato: "24", valorAluguel: "",
@@ -435,7 +448,19 @@ export default function NovoContrato() {
               {imovelSelecionado && (
                 <div style={s.imovelInfo}>
                   📍 <strong>{enderecoDisplay}</strong>
-                  {templateHtml && <span style={s.tagModelo}> 📄 Modelo associado</span>}
+                  {templateHtml && templateId && (
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginLeft: "8px" }}>
+                      <span style={s.tagModelo}>📄 {templateNome || "Modelo associado"}</span>
+                      <a
+                        href={`/modelos/${templateId}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: "12px", color: "#2563eb", fontWeight: 600, textDecoration: "none" }}
+                      >
+                        Editar modelo ↗
+                      </a>
+                    </span>
+                  )}
                 </div>
               )}
               <div style={s.formGroup}>
@@ -567,7 +592,7 @@ export default function NovoContrato() {
               <div style={s.reviewGrid}>
                 <ReviewRow label="Imóvel" value={enderecoDisplay} />
                 <ReviewRow label="Bairro/Cidade" value={[imovelSelecionado?.bairro, imovelSelecionado?.cidade].filter(Boolean).join(" — ")} />
-                <ReviewRow label="Modelo de contrato" value={templateHtml ? "Sim (modelo personalizado)" : "Contrato padrão"} />
+                <ReviewRow label="Modelo de contrato" value={templateHtml ? (templateNome || "Modelo personalizado") : "Contrato padrão"} />
                 <ReviewRow label="Locatário" value={form.nomeAlugante} />
                 <ReviewRow label="RG" value={form.rg} />
                 <ReviewRow label="CPF" value={form.cpf} />
