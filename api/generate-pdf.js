@@ -1,7 +1,7 @@
 const PDFDocument = require("pdfkit");
 const { buildContratoHtml } = require("./contract");
 
-const isValidRG = (rg) => /^\d{1,15}$/.test(rg);
+const isValidRG = (rg) => /^[\dXx]{1,15}$/.test(rg);
 const isValidCPF = (cpf) => /^\d{11}$/.test(cpf);
 const isValidDate = (date) => {
   const regex = /^\d{2}\/\d{2}\/\d{4}$/;
@@ -76,13 +76,14 @@ function gerarPDFBuffer(data) {
         const boldMatch = p.match(/^<b>([\s\S]*?)<\/b>([\s\S]*)/);
         if (boldMatch) {
           const label = boldMatch[1];
-          const rest = boldMatch[2].replace(/<[^>]+>/g, "").trim();
+          // Não fazemos trim() para preservar o espaço após o </b>
+          const rest = boldMatch[2].replace(/<[^>]+>/g, "");
 
-          if (rest) {
+          if (rest.trim()) {
             doc.font("Helvetica-Bold")
                .text(label, { align: "justify", continued: true })
                .font("Helvetica")
-               .text(" " + rest, { align: "justify" });
+               .text(rest, { align: "justify" });
           } else {
             doc.font("Helvetica-Bold").text(label, { align: "left" });
           }

@@ -3,6 +3,51 @@ import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
 
+// ── Máscaras ────────────────────────────────────────────────────────────────
+
+/** Retorna apenas os dígitos da string, limitado a maxLen caracteres. */
+function soDigitos(v, maxLen) {
+  return v.replace(/\D/g, "").substring(0, maxLen);
+}
+
+/**
+ * Máscara de data DD/MM/AAAA.
+ * O usuário só digita números; as barras são inseridas automaticamente.
+ */
+function maskDate(value) {
+  const d = soDigitos(value, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+}
+
+/**
+ * Máscara de CPF: 000.000.000-00
+ */
+function maskCPF(value) {
+  const d = soDigitos(value, 11);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+
+/**
+ * Máscara de RG: aceita dígitos e a letra X (alguns estados usam no dígito verificador).
+ * Não aplica pontuação — cada estado tem padrão diferente.
+ */
+function maskRG(value) {
+  return value.replace(/[^\dXx]/g, "").toUpperCase().substring(0, 15);
+}
+
+/** Remove a formatação do CPF para enviar ao backend (somente 11 dígitos). */
+function rawCPF(v) { return v.replace(/\D/g, ""); }
+
+/** Remove caracteres não-alfanuméricos do RG. */
+function rawRG(v) { return v.replace(/[^\dXx]/g, "").toUpperCase(); }
+
+// ── Constantes ───────────────────────────────────────────────────────────────
+
 const IMOVEIS = {
   "1898": {
     label: "Estrada Baviera, 1898 (antigo 113A)",
@@ -17,6 +62,8 @@ const IMOVEIS = {
 };
 
 const STEPS = ["Imóvel", "Locatário", "Contrato", "Revisar"];
+
+// ── Componentes auxiliares ───────────────────────────────────────────────────
 
 function StepBar({ current }) {
   return (
@@ -34,6 +81,8 @@ function StepBar({ current }) {
   );
 }
 
+// ── Componente principal ─────────────────────────────────────────────────────
+
 export default function NovoContrato() {
   const { user } = useAuth();
   const [step, setStep] = useState(1);
@@ -49,6 +98,11 @@ export default function NovoContrato() {
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
+  // Handlers com máscara
+  const handleDate = (key) => (e) => set(key, maskDate(e.target.value));
+  const handleCPF = (e) => set("cpf", maskCPF(e.target.value));
+  const handleRG = (e) => set("rg", maskRG(e.target.value));
+
   function validateStep(n) {
     const errs = [];
     if (n === 1) {
@@ -57,13 +111,15 @@ export default function NovoContrato() {
     }
     if (n === 2) {
       if (!form.nomeAlugante.trim()) errs.push("Nome obrigatório.");
-      if (!/^\d{1,15}$/.test(form.rg)) errs.push("RG inválido (somente números).");
-      if (!/^\d{11}$/.test(form.cpf)) errs.push("CPF inválido (11 dígitos, somente números).");
+      const rg = rawRG(form.rg);
+      if (!rg || rg.length < 4) errs.push("RG inválido (mínimo 4 caracteres).");
+      const cpf = rawCPF(form.cpf);
+      if (cpf.length !== 11) errs.push("CPF inválido (11 dígitos).");
       if (!isValidDate(form.birthdate)) errs.push("Data de nascimento inválida (DD/MM/AAAA).");
     }
     if (n === 3) {
       if (!isValidDate(form.dataInicioContrato)) errs.push("Data de início inválida (DD/MM/AAAA).");
-      if (!/^([1-9]|[12]\d|3[01])$/.test(form.diaPagamento)) errs.push("Dia de pagamento inválido (1-31).");
+      if (!/^([1-9]|[12]\d|3[01])$/.test(form.diaPagamento)) errs.push("Dia de pagamento inválido (1–31).");
       if (!form.tempoContrato) errs.push("Informe o tempo de contrato.");
       if (!form.valorAluguel) errs.push("Informe o valor do aluguel.");
     }
@@ -81,7 +137,14 @@ export default function NovoContrato() {
     setLoading(true);
     setErrors([]);
     try {
-      const body = { ...form, numImovel, numCasa };
+      // Envia ao backend sem a formatação da máscara
+      const body = {
+        ...form,
+        rg: rawRG(form.rg),
+        cpf: rawCPF(form.cpf),
+        numImovel,
+        numCasa,
+      };
       const res = await fetch("/api/generate-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -118,7 +181,8 @@ export default function NovoContrato() {
   }
 
   function novoContrato() {
-    setStep(1); setForm({ nomeAlugante:"", rg:"", cpf:"", maritalStatus:"solteiro", birthdate:"", dataInicioContrato:"", diaPagamento:"", tempoContrato:"24", valorAluguel:"" });
+    setStep(1);
+    setForm({ nomeAlugante: "", rg: "", cpf: "", maritalStatus: "solteiro", birthdate: "", dataInicioContrato: "", diaPagamento: "", tempoContrato: "24", valorAluguel: "" });
     setNumImovel("1898"); setNumCasa("1"); setSuccess(false); setErrors([]);
   }
 
@@ -144,6 +208,7 @@ export default function NovoContrato() {
         </div>
       ) : (
         <>
+          {/* ── Step 1: Imóvel ── */}
           {step === 1 && (
             <div style={s.section}>
               <p style={s.sectionTitle}>Selecione o imóvel</p>
@@ -171,32 +236,60 @@ export default function NovoContrato() {
               </div>
 
               <div style={s.actions}>
+                <span />
                 <button onClick={next} style={s.btn}>Próximo →</button>
               </div>
             </div>
           )}
 
+          {/* ── Step 2: Locatário ── */}
           {step === 2 && (
             <div style={s.section}>
               <p style={s.sectionTitle}>Dados do locatário</p>
               <div style={s.formGroup}>
                 <label style={s.label}>Nome completo</label>
-                <input value={form.nomeAlugante} onChange={(e) => set("nomeAlugante", e.target.value)} placeholder="Nome completo do locatário" style={s.input} />
+                <input
+                  value={form.nomeAlugante}
+                  onChange={(e) => set("nomeAlugante", e.target.value)}
+                  placeholder="Nome completo do locatário"
+                  style={s.input}
+                />
               </div>
               <div style={s.grid2}>
                 <div style={s.formGroup}>
-                  <label style={s.label}>RG (só números)</label>
-                  <input value={form.rg} onChange={(e) => set("rg", e.target.value)} placeholder="0000000" style={s.input} />
+                  <label style={s.label}>RG</label>
+                  <input
+                    value={form.rg}
+                    onChange={handleRG}
+                    placeholder="000000000"
+                    inputMode="text"
+                    style={s.input}
+                  />
+                  <span style={s.hint}>Números e X — padrão varia por estado</span>
                 </div>
                 <div style={s.formGroup}>
-                  <label style={s.label}>CPF (11 dígitos, só números)</label>
-                  <input value={form.cpf} onChange={(e) => set("cpf", e.target.value)} placeholder="00000000000" maxLength={11} style={s.input} />
+                  <label style={s.label}>CPF</label>
+                  <input
+                    value={form.cpf}
+                    onChange={handleCPF}
+                    placeholder="000.000.000-00"
+                    inputMode="numeric"
+                    maxLength={14}
+                    style={s.input}
+                  />
                 </div>
               </div>
               <div style={s.grid2}>
                 <div style={s.formGroup}>
                   <label style={s.label}>Data de nascimento</label>
-                  <input value={form.birthdate} onChange={(e) => set("birthdate", e.target.value)} placeholder="DD/MM/AAAA" style={s.input} />
+                  <input
+                    value={form.birthdate}
+                    onChange={handleDate("birthdate")}
+                    placeholder="DD/MM/AAAA"
+                    inputMode="numeric"
+                    maxLength={10}
+                    style={s.input}
+                  />
                 </div>
                 <div style={s.formGroup}>
                   <label style={s.label}>Estado civil</label>
@@ -213,27 +306,57 @@ export default function NovoContrato() {
             </div>
           )}
 
+          {/* ── Step 3: Contrato ── */}
           {step === 3 && (
             <div style={s.section}>
               <p style={s.sectionTitle}>Condições do contrato</p>
               <div style={s.grid2}>
                 <div style={s.formGroup}>
                   <label style={s.label}>Data de início</label>
-                  <input value={form.dataInicioContrato} onChange={(e) => set("dataInicioContrato", e.target.value)} placeholder="DD/MM/AAAA" style={s.input} />
+                  <input
+                    value={form.dataInicioContrato}
+                    onChange={handleDate("dataInicioContrato")}
+                    placeholder="DD/MM/AAAA"
+                    inputMode="numeric"
+                    maxLength={10}
+                    style={s.input}
+                  />
                 </div>
                 <div style={s.formGroup}>
                   <label style={s.label}>Duração (meses)</label>
-                  <input type="number" value={form.tempoContrato} onChange={(e) => set("tempoContrato", e.target.value)} placeholder="24" style={s.input} />
+                  <input
+                    type="number"
+                    value={form.tempoContrato}
+                    onChange={(e) => set("tempoContrato", e.target.value)}
+                    placeholder="24"
+                    min="1"
+                    style={s.input}
+                  />
                 </div>
               </div>
               <div style={s.grid2}>
                 <div style={s.formGroup}>
                   <label style={s.label}>Valor do aluguel (R$)</label>
-                  <input type="number" value={form.valorAluguel} onChange={(e) => set("valorAluguel", e.target.value)} placeholder="700" style={s.input} />
+                  <input
+                    type="number"
+                    value={form.valorAluguel}
+                    onChange={(e) => set("valorAluguel", e.target.value)}
+                    placeholder="700"
+                    min="0"
+                    style={s.input}
+                  />
                 </div>
                 <div style={s.formGroup}>
                   <label style={s.label}>Dia de vencimento</label>
-                  <input type="number" min="1" max="31" value={form.diaPagamento} onChange={(e) => set("diaPagamento", e.target.value)} placeholder="5" style={s.input} />
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={form.diaPagamento}
+                    onChange={(e) => set("diaPagamento", e.target.value)}
+                    placeholder="5"
+                    style={s.input}
+                  />
                 </div>
               </div>
               <div style={s.actions}>
@@ -243,6 +366,7 @@ export default function NovoContrato() {
             </div>
           )}
 
+          {/* ── Step 4: Revisar ── */}
           {step === 4 && (
             <div style={s.section}>
               <p style={s.sectionTitle}>Revise os dados antes de gerar</p>
@@ -288,7 +412,7 @@ function isValidDate(date) {
   if (!regex.test(date)) return false;
   const [d, m, y] = date.split("/").map(Number);
   if (y < 1000 || y > 3000 || m < 1 || m > 12) return false;
-  const ml = [31, (y%400===0||(y%100!==0&&y%4===0))?29:28, 31,30,31,30,31,31,30,31,30,31];
+  const ml = [31, (y % 400 === 0 || (y % 100 !== 0 && y % 4 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   return d > 0 && d <= ml[m - 1];
 }
 
@@ -321,7 +445,8 @@ const s = {
   casaBtnActive: { border: "2px solid #2563eb", background: "#1d4ed8", color: "white" },
   formGroup: { display: "flex", flexDirection: "column", gap: "4px", marginBottom: "1rem" },
   label: { fontSize: "13px", fontWeight: 600, color: "#374151" },
-  input: { padding: "10px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "14px", width: "100%" },
+  hint: { fontSize: "11px", color: "#9ca3af", marginTop: "2px" },
+  input: { padding: "10px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "14px", width: "100%", boxSizing: "border-box" },
   grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" },
   reviewGrid: { display: "flex", flexDirection: "column", marginBottom: "1.5rem" },
   actions: { display: "flex", justifyContent: "space-between", marginTop: "1.5rem", gap: "8px" },
