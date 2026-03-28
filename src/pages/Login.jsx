@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../lib/auth";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 
 export default function Login() {
   const { login } = useAuth();
@@ -59,6 +59,10 @@ export default function Login() {
             {loading ? "Entrando..." : "Entrar"}
           </button>
         </form>
+
+        <p style={s.signup}>
+          Não tem conta? <Link to="/cadastro" style={{ color: "#2563eb" }}>Cadastre-se com convite</Link>
+        </p>
       </div>
     </div>
   );
@@ -75,4 +79,5 @@ const s = {
   label: { fontSize: "13px", fontWeight: 600, color: "#374151" },
   input: { padding: "10px 12px", borderRadius: "8px", border: "1px solid #d1d5db", fontSize: "14px" },
   btn: { background: "#2563eb", color: "#fff", border: "none", padding: "12px", borderRadius: "8px", fontWeight: 600, fontSize: "15px", cursor: "pointer", marginTop: "4px" },
+  signup: { textAlign: "center", fontSize: "13px", color: "#6b7280", marginTop: "1.25rem", marginBottom: 0 },
 };
