@@ -1,5 +1,4 @@
-const chromium = require("@sparticuz/chromium");
-const puppeteer = require("puppeteer-core");
+const PDFDocument = require("pdfkit");
 const { buildContratoHtml } = require("./contract");
 
 const isValidRG = (rg) => /^\d{1,15}$/.test(rg);
@@ -32,6 +31,76 @@ function validateBody(data) {
   return errors;
 }
 
+function gerarPDFBuffer(data) {
+  return new Promise((resolve, reject) => {
+    const html = buildContratoHtml(data);
+
+    // Extrai o conteúdo do <p>
+    const pMatch = html.match(/<p>([\s\S]*?)<\/p>/);
+    if (!pMatch) return reject(new Error("Falha ao processar contrato."));
+    const rawBody = pMatch[1];
+
+    // Divide em seções por <br><br>
+    const sections = rawBody.split(/<br>\s*<br>/);
+
+    const doc = new PDFDocument({
+      size: "A4",
+      margins: { top: 70, bottom: 70, left: 70, right: 70 },
+    });
+
+    const buffers = [];
+    doc.on("data", (buf) => buffers.push(buf));
+    doc.on("end", () => resolve(Buffer.concat(buffers)));
+    doc.on("error", reject);
+
+    // Título centralizado
+    doc.font("Helvetica-Bold")
+       .fontSize(11)
+       .text("CONTRATO DE LOCAÇÃO DE IMÓVEL RESIDENCIAL", { align: "center" })
+       .moveDown(1.5);
+
+    doc.fontSize(9);
+
+    for (const section of sections) {
+      const trimmed = section.trim();
+      if (!trimmed) continue;
+
+      // Sub-partes separadas por <br> simples dentro da seção
+      const subParts = trimmed.split(/<br>/);
+
+      for (const part of subParts) {
+        const p = part.trim();
+        if (!p) continue;
+
+        // Padrão: <b>LABEL:</b> texto restante
+        const boldMatch = p.match(/^<b>([\s\S]*?)<\/b>([\s\S]*)/);
+        if (boldMatch) {
+          const label = boldMatch[1];
+          const rest = boldMatch[2].replace(/<[^>]+>/g, "").trim();
+
+          if (rest) {
+            doc.font("Helvetica-Bold")
+               .text(label, { align: "justify", continued: true })
+               .font("Helvetica")
+               .text(" " + rest, { align: "justify" });
+          } else {
+            doc.font("Helvetica-Bold").text(label, { align: "left" });
+          }
+        } else {
+          const clean = p.replace(/<[^>]+>/g, "").trim();
+          if (clean) {
+            doc.font("Helvetica").text(clean, { align: "left" });
+          }
+        }
+      }
+
+      doc.moveDown(0.6);
+    }
+
+    doc.end();
+  });
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido." });
@@ -43,27 +112,13 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ errors });
   }
 
-  let browser = null;
   try {
-    browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    });
-
-    const page = await browser.newPage();
-    const html = buildContratoHtml(data);
-    await page.setContent(html, { waitUntil: "load" });
-    const pdfBuffer = await page.pdf({ format: "A4" });
-    await browser.close();
-
+    const pdfBuffer = await gerarPDFBuffer(data);
     const filename = `contrato_${data.nomeAlugante.replace(/\s+/g, "_")}.pdf`;
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-    res.status(200).send(Buffer.from(pdfBuffer));
+    res.status(200).send(pdfBuffer);
   } catch (err) {
-    if (browser) await browser.close();
     console.error("Erro ao gerar PDF:", err);
     res.status(500).json({ error: "Erro ao gerar PDF." });
   }
