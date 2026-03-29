@@ -308,7 +308,7 @@ export default function NovoContrato() {
   }
 
   const enderecoDisplay = imovelSelecionado
-    ? [imovelSelecionado.logradouro, imovelSelecionado.numero].filter(Boolean).join(", ")
+    ? [imovelSelecionado.logradouro, imovelSelecionado.numero, imovelSelecionado.complemento].filter(Boolean).join(", ")
     : "";
 
   return (
@@ -363,6 +363,7 @@ export default function NovoContrato() {
                         }}
                       >
                         <div style={s.imovelCardTitle}>{endereco || "Imóvel sem endereço"}</div>
+                        {im.complemento && <div style={s.imovelCardCompl}>{im.complemento}</div>}
                         {im.bairro && <div style={s.imovelCardSub}>{im.bairro}{im.cidade ? ` — ${im.cidade}` : ""}</div>}
                         <div style={{ display: "flex", gap: "6px", marginTop: "8px", flexWrap: "wrap" }}>
                           {ocupado && (
@@ -618,6 +619,7 @@ const s = {
   imovelCard: { border: "2px solid #e5e7eb", borderRadius: "12px", padding: "1rem", cursor: "pointer", transition: "all .15s" },
   imovelCardActive: { border: "2px solid #2563eb", background: "#eff6ff" },
   imovelCardTitle: { fontWeight: 600, fontSize: "14px", color: "#111827" },
+  imovelCardCompl: { fontSize: "12px", color: "#4b5563", marginTop: "2px", fontWeight: 500 },
   imovelCardSub: { fontSize: "12px", color: "#6b7280", marginTop: "4px" },
   tagOcupado: { fontSize: "11px", background: "#fee2e2", color: "#991b1b", borderRadius: "20px", padding: "2px 8px", fontWeight: 600 },
   tagLivre: { fontSize: "11px", background: "#dcfce7", color: "#166534", borderRadius: "20px", padding: "2px 8px", fontWeight: 600 },
