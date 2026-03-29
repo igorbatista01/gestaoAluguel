@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { collection, getDocs, query, where, orderBy } from "firebase/firestore";
+import { collection, getDocs, getDoc, doc, query, where, orderBy } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
 import { LIMITE_IMOVEIS_NORMAL } from "../lib/validation";
@@ -9,6 +9,7 @@ export default function Imoveis() {
   const { user, nivel } = useAuth();
   const navigate = useNavigate();
   const [imoveis, setImoveis] = useState([]);
+  const [proprietarios, setProprietarios] = useState({}); // { uid: nomeCompleto }
   const [loading, setLoading] = useState(true);
 
   const carregar = useCallback(async () => {
@@ -25,7 +26,25 @@ export default function Imoveis() {
       );
     }
     const snap = await getDocs(q);
-    setImoveis(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    const lista = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    setImoveis(lista);
+
+    // Para admin: busca os nomes dos proprietários de forma paralela
+    if (nivel === "ADMIN") {
+      const uids = [...new Set(lista.map((im) => im.uid).filter(Boolean))];
+      const resultados = await Promise.all(
+        uids.map((uid) => getDoc(doc(db, "usuarios", uid)))
+      );
+      const mapa = {};
+      resultados.forEach((snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          mapa[snap.id] = d.nomeCompleto || d.email || snap.id;
+        }
+      });
+      setProprietarios(mapa);
+    }
+
     setLoading(false);
   }, [user, nivel]);
 
@@ -64,30 +83,40 @@ export default function Imoveis() {
         </div>
       ) : (
         <div style={s.grid}>
-          {imoveis.map((im) => (
-            <Link key={im.id} to={`/imoveis/${im.id}`} style={s.card}>
-              <div style={s.cardTop}>
-                <span style={s.cardAddr}>
-                  {im.logradouro}{im.numero ? `, ${im.numero}` : ""}
-                </span>
-                <span style={{ ...s.badge, ...(im.ocupado ? s.badgeOcup : s.badgeLivre) }}>
-                  {im.ocupado ? "Ocupado" : "Disponível"}
-                </span>
-              </div>
-              {(im.bairro || im.cidade) && (
-                <div style={s.cardSub}>
-                  {[im.bairro, im.cidade && im.estado ? `${im.cidade}/${im.estado}` : im.cidade].filter(Boolean).join(" — ")}
+          {imoveis.map((im) => {
+            const enderecoLinha1 = [im.logradouro, im.numero].filter(Boolean).join(", ");
+            const enderecoLinha2 = im.complemento || null;
+            return (
+              <Link key={im.id} to={`/imoveis/${im.id}`} style={s.card}>
+                <div style={s.cardTop}>
+                  <div>
+                    <span style={s.cardAddr}>{enderecoLinha1 || "Sem endereço"}</span>
+                    {enderecoLinha2 && (
+                      <span style={s.cardCompl}>{enderecoLinha2}</span>
+                    )}
+                  </div>
+                  <span style={{ ...s.badge, ...(im.ocupado ? s.badgeOcup : s.badgeLivre) }}>
+                    {im.ocupado ? "Ocupado" : "Disponível"}
+                  </span>
                 </div>
-              )}
-              <div style={s.cardInfo}>
-                {im.numComodos} cômodo{im.numComodos !== 1 ? "s" : ""}
-                {im.temLavanderia ? " · Lavanderia" : ""}
-              </div>
-              {im.inquilino?.nome && (
-                <div style={s.cardTenant}>👤 {im.inquilino.nome}</div>
-              )}
-            </Link>
-          ))}
+                {(im.bairro || im.cidade) && (
+                  <div style={s.cardSub}>
+                    {[im.bairro, im.cidade && im.estado ? `${im.cidade}/${im.estado}` : im.cidade].filter(Boolean).join(" — ")}
+                  </div>
+                )}
+                <div style={s.cardInfo}>
+                  {im.numComodos} cômodo{im.numComodos !== 1 ? "s" : ""}
+                  {im.temLavanderia ? " · Lavanderia" : ""}
+                </div>
+                {im.inquilino?.nome && (
+                  <div style={s.cardTenant}>👤 {im.inquilino.nome}</div>
+                )}
+                {nivel === "ADMIN" && im.uid && proprietarios[im.uid] && (
+                  <div style={s.cardOwner}>🏠 {proprietarios[im.uid]}</div>
+                )}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>
@@ -116,4 +145,6 @@ const s = {
   cardSub: { fontSize: "13px", color: "#6b7280", marginBottom: "6px" },
   cardInfo: { fontSize: "13px", color: "#374151" },
   cardTenant: { marginTop: "8px", fontSize: "13px", color: "#2563eb" },
+  cardCompl: { display: "block", fontSize: "12px", color: "#6b7280", marginTop: "2px", fontWeight: 500 },
+  cardOwner: { marginTop: "6px", fontSize: "12px", color: "#7c3aed", background: "#f5f3ff", borderRadius: "4px", padding: "2px 6px", display: "inline-block" },
 };
