@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { doc, getDoc, updateDoc, serverTimestamp, collection, getDocs, query, where } from "firebase/firestore";
+import { doc, getDoc, updateDoc, deleteDoc, serverTimestamp, collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
 import { maskCEP, maskCPF, maskDate, maskPhone, maskRG, rawCPF, rawRG, rawPhone, rawCEP, displayCPF, displayPhone } from "../lib/masks";
@@ -33,6 +33,10 @@ export default function Imovel() {
   const [errorInq, setErrorInq] = useState("");
 
   const [buscandoCEP, setBuscandoCEP] = useState(false);
+
+  // Confirmação de exclusão
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
 
   // Modelo de contrato
   const [modelos, setModelos] = useState([]);
@@ -198,10 +202,21 @@ export default function Imovel() {
     }
   }
 
-  async function removerInquilino() {
-    if (!window.confirm("Deseja remover o inquilino deste imóvel?")) return;
-    await updateDoc(doc(db, "imoveis", id), { inquilino: null, atualizadoEm: serverTimestamp() });
-    setDados((d) => ({ ...d, inquilino: null }));
+  async function liberarImovel() {
+    if (!window.confirm("Deseja liberar este imóvel?\n\nO inquilino será removido e o status voltará para Disponível.")) return;
+    await updateDoc(doc(db, "imoveis", id), { inquilino: null, ocupado: false, atualizadoEm: serverTimestamp() });
+    setDados((d) => ({ ...d, inquilino: null, ocupado: false }));
+  }
+
+  async function excluirImovel() {
+    setExcluindo(true);
+    try {
+      await deleteDoc(doc(db, "imoveis", id));
+      navigate("/imoveis");
+    } catch {
+      setExcluindo(false);
+      setConfirmandoExclusao(false);
+    }
   }
 
   // ── Render ──
@@ -221,7 +236,10 @@ export default function Imovel() {
         <div style={s.sectionHeader}>
           <h3 style={s.sectionTitle}>Endereço e características</h3>
           {podeEditar && !editandoImovel && (
-            <button style={s.editBtn} onClick={iniciarEdicaoImovel}>Editar</button>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button style={s.editBtn} onClick={iniciarEdicaoImovel}>Editar</button>
+              <button style={s.deleteBtn} onClick={() => setConfirmandoExclusao(true)}>Excluir</button>
+            </div>
           )}
         </div>
 
@@ -322,7 +340,7 @@ export default function Imovel() {
           {podeEditar && !editandoInq && (
             <div style={{ display: "flex", gap: "8px" }}>
               {inquilino && (
-                <button style={s.dangerBtn} onClick={removerInquilino}>Remover</button>
+                <button style={s.dangerBtn} onClick={liberarImovel}>Liberar imóvel</button>
               )}
               <button style={s.editBtn} onClick={iniciarEdicaoInq}>
                 {inquilino ? "Editar" : "Vincular inquilino"}
@@ -422,6 +440,42 @@ export default function Imovel() {
         </div>
       )}
 
+      {/* ── Modal confirmação de exclusão ── */}
+      {confirmandoExclusao && (
+        <div style={s.overlay}>
+          <div style={s.modal}>
+            <h3 style={{ fontSize: "18px", fontWeight: 700, margin: "0 0 0.75rem", color: "#111827" }}>
+              Excluir imóvel?
+            </h3>
+            <p style={{ fontSize: "14px", color: "#6b7280", margin: "0 0 0.5rem", lineHeight: 1.6 }}>
+              Você está prestes a excluir permanentemente:
+            </p>
+            <p style={{ fontSize: "15px", fontWeight: 600, color: "#111827", margin: "0 0 1.25rem" }}>
+              {[dados?.logradouro, dados?.numero].filter(Boolean).join(", ") || "Este imóvel"}
+            </p>
+            <p style={{ fontSize: "13px", color: "#b45309", background: "#fef3c7", borderRadius: "8px", padding: "10px 14px", margin: "0 0 1.5rem" }}>
+              ⚠️ Esta ação não pode ser desfeita. Os contratos gerados para este imóvel não serão excluídos.
+            </p>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                style={{ ...s.btnSec, flex: 1 }}
+                onClick={() => setConfirmandoExclusao(false)}
+                disabled={excluindo}
+              >
+                Cancelar
+              </button>
+              <button
+                style={{ flex: 1, background: "#dc2626", color: "#fff", border: "none", padding: "10px 20px", borderRadius: "8px", fontWeight: 700, fontSize: "14px", cursor: excluindo ? "not-allowed" : "pointer", opacity: excluindo ? 0.7 : 1 }}
+                onClick={excluirImovel}
+                disabled={excluindo}
+              >
+                {excluindo ? "Excluindo..." : "Sim, excluir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Modal seleção de modelo ── */}
       {selecionandoModelo && (
         <div style={s.overlay}>
@@ -493,6 +547,7 @@ const s = {
   sectionTitle: { fontSize: "16px", fontWeight: 700, margin: 0, color: "#111827" },
   editBtn: { background: "#eff6ff", color: "#2563eb", border: "none", padding: "6px 14px", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "pointer" },
   dangerBtn: { background: "#fff1f2", color: "#be123c", border: "none", padding: "6px 14px", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "pointer" },
+  deleteBtn: { background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "6px 14px", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "pointer" },
   infoGrid: { display: "grid", gridTemplateColumns: "140px 1fr", gap: "10px 16px", alignItems: "center" },
   editGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" },
   emptyText: { color: "#9ca3af", fontSize: "14px", margin: 0 },
