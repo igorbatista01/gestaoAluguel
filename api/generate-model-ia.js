@@ -16,7 +16,8 @@ const CORS_HEADERS = {
 function geminiPost(apiKey, body) {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
-    const path = `/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+    // v1 (stable) + gemini-1.5-flash = free tier com cota generosa
+    const path = `/v1/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
     const options = {
       hostname: "generativelanguage.googleapis.com",
       path,
@@ -104,8 +105,20 @@ module.exports = async function handler(req, res) {
 
     if (result.status < 200 || result.status >= 300) {
       console.error("Gemini error status:", result.status, result.body);
-      res.writeHead(502, { ...CORS_HEADERS, "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Erro ao chamar a API Gemini.", detalhes: result.body }));
+
+      // Passa o status real para o frontend (429 → rate limit, 404 → modelo não encontrado etc.)
+      let mensagem = "Erro ao chamar a API Gemini.";
+      if (result.status === 429) {
+        mensagem = "Limite de requisições atingido. Aguarde 1 minuto e tente novamente.";
+      } else if (result.status === 404) {
+        mensagem = "Modelo de IA não encontrado. Contacte o suporte.";
+      } else if (result.status === 401 || result.status === 403) {
+        mensagem = "Chave de API inválida ou sem permissão.";
+      }
+
+      const statusParaCliente = [429, 401, 403, 404].includes(result.status) ? result.status : 502;
+      res.writeHead(statusParaCliente, { ...CORS_HEADERS, "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: mensagem }));
       return;
     }
 

@@ -201,6 +201,7 @@ export default function ModeloContrato() {
       });
       const data = await res.json();
       if (!res.ok) {
+        // 429 = rate limit; mostra mensagem amigável sem código HTTP
         setErroIA(data.error || "Erro ao gerar contrato com IA.");
         return;
       }
