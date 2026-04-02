@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, getDoc, doc } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, getDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
 import { maskDate, maskCPF, maskRG, maskMoney, rawCPF, rawRG, rawMoney } from "../lib/masks";
@@ -72,6 +72,10 @@ export default function NovoContrato() {
   // Modal "sem modelo associado"
   const [confirmSemModelo, setConfirmSemModelo] = useState(false);
   const [imovelSemModelo, setImovelSemModelo] = useState(null);
+
+  // Modal "associar locatário ao imóvel após gerar contrato"
+  const [modalAssociar, setModalAssociar] = useState(false);
+  const [associando, setAssociando] = useState(false);
 
   // Formulário do locatário
   const [form, setForm] = useState({
@@ -320,13 +324,49 @@ export default function NovoContrato() {
         dataFim: calcDataFim(form.dataInicioContrato, form.tempoContrato),
       });
 
-      setSuccess(true);
+      // Se o imóvel está desocupado, pergunta se quer associar o locatário
+      if (!im.inquilino?.nome) {
+        setModalAssociar(true);
+      } else {
+        setSuccess(true);
+      }
     } catch (err) {
       console.error(err);
       setErrors(["Erro inesperado. Tente novamente."]);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function associarLocatario() {
+    setAssociando(true);
+    try {
+      const im = imovelSelecionado;
+      await updateDoc(doc(db, "imoveis", im.id), {
+        inquilino: {
+          nome: form.nomeAlugante,
+          rg: rawRG(form.rg),
+          cpf: rawCPF(form.cpf),
+          dataNascimento: form.birthdate,
+          estadoCivil: form.maritalStatus,
+          email: "",
+          telefone: "",
+        },
+        ocupado: true,
+        atualizadoEm: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Erro ao associar locatário:", err);
+    } finally {
+      setAssociando(false);
+      setModalAssociar(false);
+      setSuccess(true);
+    }
+  }
+
+  function naoAssociar() {
+    setModalAssociar(false);
+    setSuccess(true);
   }
 
   function novoContrato() {
@@ -628,6 +668,34 @@ export default function NovoContrato() {
             >
               Cancelar
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: associar locatário ao imóvel ── */}
+      {modalAssociar && (
+        <div style={s.overlay}>
+          <div style={s.modal}>
+            <h3 style={s.modalTitle}>Contrato gerado! 🎉</h3>
+            <p style={s.modalText}>
+              Deseja associar <strong>{form.nomeAlugante}</strong> como inquilino deste imóvel?
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <button
+                style={{ ...s.btnOpcao, opacity: associando ? 0.7 : 1 }}
+                onClick={associarLocatario}
+                disabled={associando}
+              >
+                {associando ? "Associando..." : "✅ Sim, associar como inquilino"}
+              </button>
+              <button
+                style={{ ...s.btnOpcao, background: "#f9fafb", color: "#374151" }}
+                onClick={naoAssociar}
+                disabled={associando}
+              >
+                🚫 Não — contrato avulso ou teste
+              </button>
+            </div>
           </div>
         </div>
       )}
