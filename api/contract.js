@@ -1,9 +1,4 @@
-const locador = {
-  nome: "José Carlos Souza Figueiredo Batista",
-  rg: "279328680",
-  cpf: "52162745534",
-  dataNascimento: "11/10/1972",
-};
+// Dados do locador são sempre enviados pelo frontend (perfil do usuário logado).
 
 function resolveImovelInfo(numImovel, numCasa, fallback) {
   // Imóveis originais com dados específicos (compatibilidade legada)
@@ -46,12 +41,12 @@ function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, da
   const fimData = calcularDataFim(dataInicioContrato, tempoContrato);
   const dataAtualExtenso = dataAtualPorExtenso();
 
-  // Usa dados do locador logado; cai no hardcode só se não vier nenhum dado
-  const locadorNome    = nomeLocador            || locador.nome;
-  const locadorRg      = rgLocador              || locador.rg;
-  const locadorCpf     = cpfLocador             || locador.cpf;
-  const locadorNasc    = dataNascimentoLocador  || locador.dataNascimento;
-  const locadorEstCivil = maritalStatusLocador  || "casado";
+  // Dados do locador vindos do perfil do usuário logado
+  const locadorNome     = nomeLocador           || "";
+  const locadorRg       = rgLocador             || "";
+  const locadorCpf      = cpfLocador            || "";
+  const locadorNasc     = dataNascimentoLocador || "";
+  const locadorEstCivil = maritalStatusLocador  || "";
 
   const contrato = `
 <b>LOCADOR:</b> ${locadorNome}, brasileiro, ${locadorEstCivil}, portador da cédula de R.G de nº ${locadorRg} e CPF nº ${locadorCpf}, nascido em ${locadorNasc}
