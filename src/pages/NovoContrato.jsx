@@ -278,6 +278,12 @@ export default function NovoContrato() {
         numCasa: im.numero || "",
         enderecoCompleto: enderecoImovel,
         numComodos: String(im.quartos || ""),
+        // Dados do locador (proprietário logado) — usados pelo contrato padrão
+        nomeLocador: perfil?.nomeCompleto || user?.displayName || user?.email || "",
+        rgLocador: perfil?.rg || "",
+        cpfLocador: perfil?.cpf || "",
+        dataNascimentoLocador: perfil?.dataNascimento || "",
+        maritalStatusLocador: perfil?.maritalStatus || "",
       };
 
       // Se há template, substitui variáveis e envia como customHtml

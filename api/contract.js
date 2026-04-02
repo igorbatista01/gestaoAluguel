@@ -41,13 +41,20 @@ function calcularDataFim(dataInicioContrato, tempoContrato) {
   return dataFim.toLocaleDateString("pt-BR");
 }
 
-function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, dataInicioContrato, diaPagamento, tempoContrato, valorAluguel, numImovel, numCasa, enderecoCompleto, numComodos: numComodoParam }) {
+function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, dataInicioContrato, diaPagamento, tempoContrato, valorAluguel, numImovel, numCasa, enderecoCompleto, numComodos: numComodoParam, nomeLocador, rgLocador, cpfLocador, dataNascimentoLocador, maritalStatusLocador }) {
   const { enderecoFormatado, numComodos, aguaLuzIndividual } = resolveImovelInfo(numImovel, numCasa, { enderecoCompleto, numComodos: numComodoParam });
   const fimData = calcularDataFim(dataInicioContrato, tempoContrato);
   const dataAtualExtenso = dataAtualPorExtenso();
 
+  // Usa dados do locador logado; cai no hardcode só se não vier nenhum dado
+  const locadorNome    = nomeLocador            || locador.nome;
+  const locadorRg      = rgLocador              || locador.rg;
+  const locadorCpf     = cpfLocador             || locador.cpf;
+  const locadorNasc    = dataNascimentoLocador  || locador.dataNascimento;
+  const locadorEstCivil = maritalStatusLocador  || "casado";
+
   const contrato = `
-<b>LOCADOR:</b> ${locador.nome}, brasileiro, casado, portador da cédula de R.G de nº ${locador.rg} e CPF nº ${locador.cpf}, nascido em ${locador.dataNascimento}
+<b>LOCADOR:</b> ${locadorNome}, brasileiro, ${locadorEstCivil}, portador da cédula de R.G de nº ${locadorRg} e CPF nº ${locadorCpf}, nascido em ${locadorNasc}
 <br><br>
 <b>LOCATÁRIO:</b> ${nomeAlugante}, brasileiro, ${maritalStatus}, portador da cédula de R.G de nº: ${rg}, e C.P.F de nº ${cpf}, nascido em ${birthdate}
 <br><br>
@@ -87,14 +94,14 @@ function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, da
 <br><br>
 <b>CLÁUSULA DÉCIMA SÉTIMA:</b> Está vedado a perturbação da paz alheia seguindo a Lei da Poluição Sonora do município de Embu das Artes (lei nº 2438, de 11/12/2009), em caso de reincidência o contrato será rescindido.
 <br><br>
-<b>CLÁUSULA DÉCIMA OITAVA:</b> ${nomeAlugante}, brasileiro, ${maritalStatus}, portador da cédula de R.G de nº: ${rg}, e C.P.F de nº ${cpf}, nascido em ${birthdate} autoriza ${locador.nome}, brasileiro, casado, portador da cédula de R.G de nº ${locador.rg} e CPF nº ${locador.cpf} a realizar transferência da titularidade das contas de água (junto a Sabesp) e luz (junto a Enel) para seu nome a partir da data de início da locação ou desvinculá-lo caso o contrato seja encerrado.
+<b>CLÁUSULA DÉCIMA OITAVA:</b> ${nomeAlugante}, brasileiro, ${maritalStatus}, portador da cédula de R.G de nº: ${rg}, e C.P.F de nº ${cpf}, nascido em ${birthdate} autoriza ${locadorNome}, brasileiro, ${locadorEstCivil}, portador da cédula de R.G de nº ${locadorRg} e CPF nº ${locadorCpf} a realizar transferência da titularidade das contas de água (junto a Sabesp) e luz (junto a Enel) para seu nome a partir da data de início da locação ou desvinculá-lo caso o contrato seja encerrado.
 <br><br>
 <br>
 Embu das Artes,<br>
 ${dataAtualExtenso}
 <br><br>
 _____________________________________________________<br>
-LOCADOR - ${locador.nome}
+LOCADOR - ${locadorNome}
 <br><br>
 _____________________________________________________<br>
 LOCATÁRIO - ${nomeAlugante}
