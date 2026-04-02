@@ -24,9 +24,15 @@ function resolveImovelInfo(numImovel, numCasa, fallback) {
   };
 }
 
-function dataAtualPorExtenso() {
-  const data = new Date();
+function dataAtualPorExtenso(dataIso) {
+  // Usa a data enviada pelo frontend (timezone do usuário) para evitar desfasagem UTC
   const meses = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+  if (dataIso) {
+    const [dia, mes, ano] = dataIso.split("/");
+    return `${parseInt(dia, 10)} de ${meses[parseInt(mes, 10) - 1]} de ${ano}`;
+  }
+  // Fallback: usa o servidor (pode divergir 1 dia em fusos adiantados)
+  const data = new Date();
   return `${data.getDate()} de ${meses[data.getMonth()]} de ${data.getFullYear()}`;
 }
 
@@ -36,10 +42,10 @@ function calcularDataFim(dataInicioContrato, tempoContrato) {
   return dataFim.toLocaleDateString("pt-BR");
 }
 
-function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, dataInicioContrato, diaPagamento, tempoContrato, valorAluguel, numImovel, numCasa, enderecoCompleto, numComodos: numComodoParam, nomeLocador, rgLocador, cpfLocador, dataNascimentoLocador, maritalStatusLocador }) {
+function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, dataInicioContrato, diaPagamento, tempoContrato, valorAluguel, numImovel, numCasa, enderecoCompleto, numComodos: numComodoParam, nomeLocador, rgLocador, cpfLocador, dataNascimentoLocador, maritalStatusLocador, dataGeracao }) {
   const { enderecoFormatado, numComodos, aguaLuzIndividual } = resolveImovelInfo(numImovel, numCasa, { enderecoCompleto, numComodos: numComodoParam });
   const fimData = calcularDataFim(dataInicioContrato, tempoContrato);
-  const dataAtualExtenso = dataAtualPorExtenso();
+  const dataAtualExtenso = dataAtualPorExtenso(dataGeracao);
 
   // Dados do locador vindos do perfil do usuário logado
   const locadorNome     = nomeLocador           || "";
@@ -83,13 +89,13 @@ function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, da
 <br><br>
 <b>CLÁUSULA DÉCIMA QUARTA:</b> A infração de qualquer das cláusulas do presente contrato, sujeita o infrator à multa de duas vezes o valor do aluguel, tomando-se por base, o último aluguel vencido.
 <br><br>
-<b>CLÁUSULA DÉCIMA QUINTA:</b> As partes contratantes obrigam-se por si, herdeiros e/ou sucessores, elegendo o Foro da Cidade de Embu das Artes, para a propositura de qualquer ação.
+<b>CLÁUSULA DÉCIMA QUINTA:</b> As partes contratantes obrigam-se por si, herdeiros e/ou sucessores, elegendo de comum acordo o foro competente da Comarca em que se situa o imóvel locado, ou outro que venha a ser convencionado entre as partes, para a propositura de qualquer ação oriunda do presente instrumento.
 <br><br>
 <b>CLÁUSULA DÉCIMA SEXTA:</b> Está vedado o consumo de drogas (que se inclui bebidas alcoólicas) dentro do objeto deste contrato.
 <br><br>
 <b>CLÁUSULA DÉCIMA SÉTIMA:</b> Está vedado a perturbação da paz alheia seguindo a Lei da Poluição Sonora do município de Embu das Artes (lei nº 2438, de 11/12/2009), em caso de reincidência o contrato será rescindido.
 <br><br>
-<b>CLÁUSULA DÉCIMA OITAVA:</b> ${nomeAlugante}, brasileiro, ${maritalStatus}, portador da cédula de R.G de nº: ${rg}, e C.P.F de nº ${cpf}, nascido em ${birthdate} autoriza ${locadorNome}, brasileiro, ${locadorEstCivil}, portador da cédula de R.G de nº ${locadorRg} e CPF nº ${locadorCpf} a realizar transferência da titularidade das contas de água (junto a Sabesp) e luz (junto a Enel) para seu nome a partir da data de início da locação ou desvinculá-lo caso o contrato seja encerrado.
+<b>CLÁUSULA DÉCIMA OITAVA:</b> ${nomeAlugante}, brasileiro, ${maritalStatus}, portador da cédula de R.G de nº: ${rg}, e C.P.F de nº ${cpf}, nascido em ${birthdate} autoriza ${locadorNome}, brasileiro, ${locadorEstCivil}, portador da cédula de R.G de nº ${locadorRg} e CPF nº ${locadorCpf} a realizar a transferência de titularidade das contas de fornecimento de água e energia elétrica do imóvel para o seu nome a partir da data de início da locação, bem como a reversão de tais titularidades ao LOCADOR quando da rescisão ou término deste contrato, junto às respectivas concessionárias de serviço público responsáveis pela área do imóvel.
 <br><br>
 <br>
 Embu das Artes,<br>

@@ -288,6 +288,8 @@ export default function NovoContrato() {
         cpfLocador: perfil?.cpf || "",
         dataNascimentoLocador: perfil?.dataNascimento || "",
         maritalStatusLocador: perfil?.maritalStatus || "",
+        // Data atual no timezone do usuário (evita desfasagem UTC no servidor)
+        dataGeracao: new Date().toLocaleDateString("pt-BR"),
       };
 
       // Se há template, substitui variáveis e envia como customHtml
@@ -402,7 +404,12 @@ export default function NovoContrato() {
         <div style={s.successBox}>
           <div style={{ fontSize: "32px", marginBottom: "12px" }}>✅</div>
           <div style={{ fontSize: "18px", fontWeight: 600, marginBottom: "8px" }}>Contrato gerado!</div>
-          <div style={{ color: "#6b7280", marginBottom: "1.5rem" }}>PDF baixado e salvo no histórico.</div>
+          <div style={{ color: "#6b7280", marginBottom: "1rem" }}>PDF baixado e salvo no histórico.</div>
+          {!templateHtml && (
+            <div style={s.avisoContratoPadrao}>
+              ⚠️ <strong>Atenção:</strong> Este é um contrato padrão. Verifique todas as informações antes de utilizá-lo oficialmente e considere criar um modelo personalizado para seus imóveis.
+            </div>
+          )}
           <button onClick={novoContrato} style={s.btn}>Gerar novo contrato</button>
         </div>
       ) : (
@@ -747,6 +754,7 @@ const s = {
   stepNum: { width: "20px", height: "20px", borderRadius: "50%", background: "currentColor", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700, flexShrink: 0 },
   errorBox: { background: "#fee2e2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: "10px", padding: "12px 16px", marginBottom: "1.5rem", fontSize: "14px", lineHeight: 1.7 },
   successBox: { textAlign: "center", padding: "3rem 2rem", background: "#f0fdf4", borderRadius: "16px" },
+  avisoContratoPadrao: { background: "#fefce8", border: "1px solid #fde047", color: "#854d0e", borderRadius: "10px", padding: "12px 16px", marginBottom: "1.25rem", fontSize: "13px", lineHeight: 1.6, textAlign: "left" },
   section: { background: "#fff", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 2px 12px rgba(0,0,0,0.06)" },
   sectionTitle: { fontWeight: 600, fontSize: "15px", marginBottom: "1rem", color: "#111827" },
   imovelInfo: { background: "#eff6ff", borderRadius: "8px", padding: "8px 12px", marginBottom: "1rem", fontSize: "13px", color: "#1e40af" },
