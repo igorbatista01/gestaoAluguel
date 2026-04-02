@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import {
   doc, getDoc, setDoc, updateDoc, serverTimestamp, collection,
   getDocs, query, where,
@@ -83,11 +83,14 @@ export default function ModeloContrato() {
   const isNew = !id;
   const { user, perfil } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const editorRef = useRef(null);
   const savedSelRef = useRef(null); // salva seleção antes do select abrir
   const [nome, setNome] = useState("");
-  const [conteudoInicial, setConteudoInicial] = useState(null); // HTML carregado do Firestore
+  // HTML gerado pela IA passado via navigate state (somente para modelos novos)
+  const htmlIAInicial = isNew ? (location.state?.htmlInicial || null) : null;
+  const [conteudoInicial, setConteudoInicial] = useState(htmlIAInicial); // HTML carregado do Firestore ou IA
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!isNew);
