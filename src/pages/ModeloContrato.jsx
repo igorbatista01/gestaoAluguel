@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   doc, getDoc, setDoc, updateDoc, serverTimestamp, collection,
   getDocs, query, where,
@@ -81,16 +81,13 @@ function insertAtCursor(html) {
 export default function ModeloContrato() {
   const { id } = useParams(); // undefined = novo modelo, string = editar
   const isNew = !id;
-  const { user, perfil } = useAuth();
+  const { user, perfil, nivel } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const editorRef = useRef(null);
   const savedSelRef = useRef(null); // salva seleção antes do select abrir
   const [nome, setNome] = useState("");
-  // HTML gerado pela IA passado via navigate state (somente para modelos novos)
-  const htmlIAInicial = isNew ? (location.state?.htmlInicial || null) : null;
-  const [conteudoInicial, setConteudoInicial] = useState(htmlIAInicial); // HTML carregado do Firestore ou IA
+  const [conteudoInicial, setConteudoInicial] = useState(null); // HTML carregado do Firestore
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(!isNew);
@@ -99,6 +96,11 @@ export default function ModeloContrato() {
   const [imoveis, setImoveis] = useState([]);
   const [associando, setAssociando] = useState(null);
   const [associandoOk, setAssociandoOk] = useState(false);
+
+  // ── IA: gerar contrato ──────────────────────────────────────────────────────
+  const isPremium = ["PREMIUM", "ADMIN"].includes(nivel);
+  const [gerandoIA, setGerandoIA] = useState(false);
+  const [erroIA, setErroIA] = useState("");
 
   // Carrega modelo existente do Firestore
   useEffect(() => {
@@ -184,6 +186,34 @@ export default function ModeloContrato() {
     setTimeout(() => setAssociandoOk(false), 2000);
   }
 
+  async function gerarComIA() {
+    const temConteudo = editorRef.current?.innerHTML?.trim() && editorRef.current.innerHTML !== "<br>";
+    if (temConteudo && !window.confirm("O editor já tem conteúdo. Deseja substituir pelo contrato gerado pela IA?")) return;
+    setGerandoIA(true);
+    setErroIA("");
+    try {
+      const res = await fetch("/api/generate-model-ia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nivelUsuario: nivel,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setErroIA(data.error || "Erro ao gerar contrato com IA.");
+        return;
+      }
+      if (editorRef.current) {
+        editorRef.current.innerHTML = data.html;
+      }
+    } catch (e) {
+      setErroIA("Erro de conexão com o servidor.");
+    } finally {
+      setGerandoIA(false);
+    }
+  }
+
   if (loading) return <div style={s.center}>Carregando...</div>;
 
   return (
@@ -218,7 +248,17 @@ export default function ModeloContrato() {
             value={nome}
             onChange={(e) => setNome(e.target.value)}
           />
-          <div style={{ display: "flex", gap: "8px" }}>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            {isPremium && (
+              <button
+                style={{ ...s.btnIA, opacity: gerandoIA ? 0.7 : 1 }}
+                onClick={gerarComIA}
+                disabled={gerandoIA}
+                title="Gerar contrato completo com Inteligência Artificial"
+              >
+                {gerandoIA ? "⏳ Gerando..." : "✨ Gerar com IA"}
+              </button>
+            )}
             <button style={s.btnSec} onClick={() => navigate("/modelos")}>Cancelar</button>
             <button
               style={{ ...s.btnSave, opacity: saving ? 0.7 : 1 }}
@@ -230,6 +270,7 @@ export default function ModeloContrato() {
           </div>
         </div>
 
+        {erroIA && <div style={s.errBox}>⚠️ {erroIA}</div>}
         {error && <div style={s.errBox}>{error}</div>}
 
         {/* Toolbar de formatação */}
@@ -389,8 +430,10 @@ const s = {
     flex: 1, border: "1px solid #d1d5db", borderRadius: "8px",
     padding: "8px 12px", fontSize: "14px", fontWeight: 500, minWidth: "200px",
   },
+  center: { display: "flex", alignItems: "center", justifyContent: "center", height: "200px", color: "#6b7280" },
   btnSec: { background: "#f9fafb", color: "#374151", border: "1px solid #e5e7eb", padding: "8px 16px", borderRadius: "8px", fontSize: "13px", cursor: "pointer" },
   btnSave: { background: "#2563eb", color: "#fff", border: "none", padding: "8px 18px", borderRadius: "8px", fontWeight: 700, fontSize: "13px", cursor: "pointer" },
+  btnIA: { background: "linear-gradient(135deg, #7c3aed, #4f46e5)", color: "#fff", border: "none", padding: "8px 16px", borderRadius: "8px", fontWeight: 600, fontSize: "13px", cursor: "pointer", boxShadow: "0 2px 8px rgba(124,58,237,0.3)", whiteSpace: "nowrap" },
   errBox: { background: "#fee2e2", color: "#991b1b", padding: "8px 14px", fontSize: "13px", margin: "0 1.25rem 0" },
   toolbar: {
     display: "flex", alignItems: "center", gap: "2px", padding: "6px 1.25rem",

@@ -1,9 +1,10 @@
 // api/generate-model-ia.js
 // Gera um modelo de contrato de aluguel usando Gemini AI (apenas PREMIUM/ADMIN)
+// Usa o módulo https nativo do Node para evitar problemas de compatibilidade com fetch.
+
+const https = require("https");
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -11,34 +12,54 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
-function buildPrompt({ tipoImovel, cidade, numComodos, nomeProprietario }) {
+// ── Chamada HTTPS ao Gemini sem depender de fetch ──────────────────────────────
+function geminiPost(apiKey, body) {
+  return new Promise((resolve, reject) => {
+    const bodyStr = JSON.stringify(body);
+    const path = `/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const options = {
+      hostname: "generativelanguage.googleapis.com",
+      path,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(bodyStr),
+      },
+    };
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => { data += chunk; });
+      res.on("end", () => resolve({ status: res.statusCode, body: data }));
+    });
+    req.on("error", reject);
+    req.write(bodyStr);
+    req.end();
+  });
+}
+
+// ── Prompt para o Gemini ────────────────────────────────────────────────────────
+// O contrato gerado usa as {{variáveis}} do sistema, não valores reais.
+// O tipo de imóvel é o único parâmetro opcional (residencial por padrão).
+function buildPrompt(tipoImovel) {
   const tipo = tipoImovel || "residencial";
-  const local = cidade || "cidade";
-  const comodos = numComodos || "";
-  const prop = nomeProprietario || "";
 
-  return `Você é um especialista jurídico em contratos de locação residencial no Brasil.
+  return `Você é um especialista jurídico em contratos de locação no Brasil.
 
-Gere um contrato de locação residencial completo, formal e juridicamente válido, em HTML simples (sem <html>, <head>, <body> — apenas o conteúdo interno, usando <h2>, <p>, <br> e <strong>).
-
-**Dados do imóvel:**
-- Tipo: ${tipo}
-- Cidade: ${local}
-${comodos ? `- Número de cômodos: ${comodos}` : ""}
-${prop ? `- Proprietário (LOCADOR): ${prop}` : ""}
+Gere um contrato de locação ${tipo} completo, formal e juridicamente válido, em HTML simples (apenas o conteúdo interno — use <h2>, <h3>, <p>, <br>, <strong>, <u> — sem <html>, <head>, <body>).
 
 **REGRAS OBRIGATÓRIAS:**
-1. Use EXATAMENTE estas variáveis nos campos dinâmicos (sem alterar a grafia):
-   - Inquilino: {{nome_inquilino}}, {{rg_inquilino}}, {{cpf_inquilino}}, {{data_nascimento_inquilino}}, {{email_inquilino}}, {{telefone_inquilino}}
+1. Substitua TODOS os campos variáveis pelas variáveis do sistema abaixo. Use-as EXATAMENTE (sem alterar a grafia) onde elas se aplicam:
+   - Inquilino (LOCATÁRIO): {{nome_inquilino}}, {{rg_inquilino}}, {{cpf_inquilino}}, {{data_nascimento_inquilino}}, {{email_inquilino}}, {{telefone_inquilino}}
    - Imóvel: {{logradouro_imovel}}, {{numero_imovel}}, {{complemento_imovel}}, {{bairro_imovel}}, {{cidade_imovel}}, {{estado_imovel}}, {{cep_imovel}}, {{num_comodos}}, {{endereco_completo}}
    - Contrato: {{data_contrato}}, {{data_inicio}}, {{data_fim}}, {{valor_aluguel}}, {{dia_vencimento}}, {{duracao_meses}}
-   - Proprietário: {{nome_proprietario}}, {{cpf_proprietario}}
-2. O contrato deve ter no mínimo 15 cláusulas cobrindo: identificação das partes, objeto, prazo, valor e reajuste, forma de pagamento, obrigações do locatário, obrigações do locador, benfeitorias, rescisão, multa, garantia/fiança, vistoria, sublocação, foro e disposições gerais.
-3. Use a legislação brasileira vigente (Lei 8.245/91 - Lei do Inquilinato).
-4. Ao final, inclua um bloco de assinatura com local para assinaturas do LOCADOR, LOCATÁRIO e duas testemunhas.
-5. Torne as cláusulas genéricas, sem mencionar nomes de empresas de utilidades (água, luz) — use apenas "concessionárias de serviços públicos".
-6. Use {{cidade_imovel}} em vez de nomear a cidade em cláusulas como foro.
-7. Responda SOMENTE com o HTML do contrato, sem explicações, sem markdown, sem blocos de código.`;
+   - Proprietário (LOCADOR): {{nome_proprietario}}, {{cpf_proprietario}}
+2. NÃO invente dados como nomes, CPFs, endereços ou datas — use APENAS as variáveis acima.
+3. O contrato deve ter no mínimo 15 cláusulas, cobrindo: identificação das partes, objeto, prazo, valor e reajuste (IGP-M/IPCA), forma de pagamento, obrigações do locatário, obrigações do locador, benfeitorias, rescisão antecipada, multa rescisória, garantia, vistoria inicial, sublocação, foro e disposições gerais.
+4. Use a Lei 8.245/91 (Lei do Inquilinato) como base jurídica.
+5. Use "concessionárias de serviços públicos" no lugar de nomes de empresas (Sabesp, Enel etc.).
+6. Use {{cidade_imovel}} no foro de eleição (nunca nomeie uma cidade real).
+7. Inclua ao final um bloco de assinaturas: LOCADOR ({{nome_proprietario}}), LOCATÁRIO ({{nome_inquilino}}) e duas linhas para testemunhas.
+8. Responda SOMENTE com o HTML puro, sem explicações, sem blocos de código markdown, sem nenhum texto antes ou depois do HTML.`;
 }
 
 module.exports = async function handler(req, res) {
@@ -61,8 +82,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  // Extrai campos do body
-  const { tipoImovel, cidade, numComodos, nomeProprietario, nivelUsuario } = req.body || {};
+  const { tipoImovel, nivelUsuario } = req.body || {};
 
   // Só PREMIUM ou ADMIN podem usar
   if (!["PREMIUM", "ADMIN"].includes(nivelUsuario)) {
@@ -71,30 +91,25 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const prompt = buildPrompt({ tipoImovel, cidade, numComodos, nomeProprietario });
-
   try {
-    const geminiRes = await fetch(`${GEMINI_URL}?key=${GEMINI_API_KEY}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.2,
-          maxOutputTokens: 8192,
-        },
-      }),
-    });
+    const geminiBody = {
+      contents: [{ parts: [{ text: buildPrompt(tipoImovel) }] }],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 8192,
+      },
+    };
 
-    if (!geminiRes.ok) {
-      const errBody = await geminiRes.text();
-      console.error("Gemini error:", errBody);
+    const result = await geminiPost(GEMINI_API_KEY, geminiBody);
+
+    if (result.status < 200 || result.status >= 300) {
+      console.error("Gemini error status:", result.status, result.body);
       res.writeHead(502, { ...CORS_HEADERS, "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Erro ao chamar a API Gemini.", detalhes: errBody }));
+      res.end(JSON.stringify({ error: "Erro ao chamar a API Gemini.", detalhes: result.body }));
       return;
     }
 
-    const data = await geminiRes.json();
+    const data = JSON.parse(result.body);
     const html = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     if (!html) {
@@ -103,7 +118,7 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    // Remove eventuais blocos de código markdown que o Gemini pode retornar
+    // Remove eventuais blocos markdown que o Gemini às vezes retorna
     const htmlLimpo = html
       .replace(/^```html\s*/i, "")
       .replace(/^```\s*/i, "")
