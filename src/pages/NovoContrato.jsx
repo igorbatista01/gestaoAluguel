@@ -69,6 +69,10 @@ export default function NovoContrato() {
   const [confirmOcupado, setConfirmOcupado] = useState(false);
   const [imovelPendente, setImovelPendente] = useState(null);
 
+  // Modal "sem modelo associado"
+  const [confirmSemModelo, setConfirmSemModelo] = useState(false);
+  const [imovelSemModelo, setImovelSemModelo] = useState(null);
+
   // Formulário do locatário
   const [form, setForm] = useState({
     nomeAlugante: "", rg: "", cpf: "", maritalStatus: "solteiro",
@@ -120,6 +124,13 @@ export default function NovoContrato() {
 
   // Clique em um card de imóvel
   async function selecionarImovel(im) {
+    // Se não tem modelo associado, avisa antes de continuar
+    if (!im.modeloContratoId) {
+      setImovelSemModelo(im);
+      setConfirmSemModelo(true);
+      return;
+    }
+
     // Carrega template se existir
     let tmpl = { html: null, nome: null };
     if (im.modeloContratoId) {
@@ -136,6 +147,25 @@ export default function NovoContrato() {
     setTemplateHtml(tmpl.html);
     setTemplateId(im.modeloContratoId || null);
     setTemplateNome(tmpl.nome);
+    setImovelSelecionado(im);
+    setStep(2);
+  }
+
+  // Usuário decide continuar sem modelo
+  function continuarSemModelo() {
+    const im = imovelSemModelo;
+    setConfirmSemModelo(false);
+    setImovelSemModelo(null);
+
+    if (im.inquilino?.nome) {
+      setImovelPendente({ im, tmpl: { html: null, nome: null } });
+      setConfirmOcupado(true);
+      return;
+    }
+
+    setTemplateHtml(null);
+    setTemplateId(null);
+    setTemplateNome(null);
     setImovelSelecionado(im);
     setStep(2);
   }
@@ -562,6 +592,38 @@ export default function NovoContrato() {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Modal: sem modelo associado ── */}
+      {confirmSemModelo && imovelSemModelo && (
+        <div style={s.overlay}>
+          <div style={s.modal}>
+            <h3 style={s.modalTitle}>⚠️ Sem modelo de contrato</h3>
+            <p style={s.modalText}>
+              Este imóvel não tem um modelo de contrato associado. Deseja criar um agora?
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <a
+                href="/modelos/novo"
+                style={{ ...s.btnOpcao, textDecoration: "none", display: "block", textAlign: "left" }}
+              >
+                📄 Criar modelo de contrato
+              </a>
+              <button
+                style={{ ...s.btnOpcao, background: "#f9fafb", color: "#374151" }}
+                onClick={continuarSemModelo}
+              >
+                Continuar sem modelo (usar contrato padrão)
+              </button>
+            </div>
+            <button
+              style={s.btnCancelar}
+              onClick={() => { setConfirmSemModelo(false); setImovelSemModelo(null); }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ── Modal: imóvel ocupado ── */}
