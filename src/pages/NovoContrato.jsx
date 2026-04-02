@@ -290,6 +290,8 @@ export default function NovoContrato() {
         maritalStatusLocador: perfil?.maritalStatus || "",
         // Data atual no timezone do usuário (evita desfasagem UTC no servidor)
         dataGeracao: new Date().toLocaleDateString("pt-BR"),
+        // Cidade do imóvel — usada na cláusula 17 e na assinatura
+        cidadeImovel: im.cidade || "",
       };
 
       // Se há template, substitui variáveis e envia como customHtml

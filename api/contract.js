@@ -1,24 +1,9 @@
 // Dados do locador são sempre enviados pelo frontend (perfil do usuário logado).
 
 function resolveImovelInfo(numImovel, numCasa, fallback) {
-  // Imóveis originais com dados específicos (compatibilidade legada)
-  if (numImovel === "1898") {
-    return {
-      enderecoFormatado: "Estrada Baviera nº 1898 (antigo 113A) - Embu das Artes - SP - 06825050",
-      numComodos: "2",
-      aguaLuzIndividual: ".",
-    };
-  }
-
-  if (numImovel === "105") {
-    if (numCasa === "1") return { enderecoFormatado: "Estrada Baviera nº 105, casa 1 - Embu das Artes - SP - 06825050", numComodos: "3", aguaLuzIndividual: "." };
-    if (numCasa === "2") return { enderecoFormatado: "Estrada Baviera nº 105, casa 2 - Embu das Artes - SP - 06825050", numComodos: "4", aguaLuzIndividual: "." };
-    if (numCasa === "3") return { enderecoFormatado: "Estrada Baviera nº 105, casa 3 - Embu das Artes - SP - 06825050", numComodos: "2", aguaLuzIndividual: " por meio do LOCADOR." };
-  }
-
-  // Fallback genérico: usa o endereço completo enviado pelo frontend
+  // Usa sempre os dados dinâmicos vindos do imóvel cadastrado no sistema
   return {
-    enderecoFormatado: fallback.enderecoCompleto || [numImovel, numCasa].filter(Boolean).join(", nº "),
+    enderecoFormatado: fallback.enderecoCompleto || [numImovel, numCasa].filter(Boolean).join(", "),
     numComodos: fallback.numComodos || "—",
     aguaLuzIndividual: ".",
   };
@@ -42,7 +27,7 @@ function calcularDataFim(dataInicioContrato, tempoContrato) {
   return dataFim.toLocaleDateString("pt-BR");
 }
 
-function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, dataInicioContrato, diaPagamento, tempoContrato, valorAluguel, numImovel, numCasa, enderecoCompleto, numComodos: numComodoParam, nomeLocador, rgLocador, cpfLocador, dataNascimentoLocador, maritalStatusLocador, dataGeracao }) {
+function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, dataInicioContrato, diaPagamento, tempoContrato, valorAluguel, numImovel, numCasa, enderecoCompleto, numComodos: numComodoParam, nomeLocador, rgLocador, cpfLocador, dataNascimentoLocador, maritalStatusLocador, dataGeracao, cidadeImovel }) {
   const { enderecoFormatado, numComodos, aguaLuzIndividual } = resolveImovelInfo(numImovel, numCasa, { enderecoCompleto, numComodos: numComodoParam });
   const fimData = calcularDataFim(dataInicioContrato, tempoContrato);
   const dataAtualExtenso = dataAtualPorExtenso(dataGeracao);
@@ -53,6 +38,7 @@ function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, da
   const locadorCpf      = cpfLocador            || "";
   const locadorNasc     = dataNascimentoLocador || "";
   const locadorEstCivil = maritalStatusLocador  || "";
+  const cidade          = cidadeImovel          || "____________________";
 
   const contrato = `
 <b>LOCADOR:</b> ${locadorNome}, brasileiro, ${locadorEstCivil}, portador da cédula de R.G de nº ${locadorRg} e CPF nº ${locadorCpf}, nascido em ${locadorNasc}
@@ -93,12 +79,12 @@ function buildContratoHtml({ nomeAlugante, rg, cpf, maritalStatus, birthdate, da
 <br><br>
 <b>CLÁUSULA DÉCIMA SEXTA:</b> Está vedado o consumo de drogas (que se inclui bebidas alcoólicas) dentro do objeto deste contrato.
 <br><br>
-<b>CLÁUSULA DÉCIMA SÉTIMA:</b> Está vedado a perturbação da paz alheia seguindo a Lei da Poluição Sonora do município de Embu das Artes (lei nº 2438, de 11/12/2009), em caso de reincidência o contrato será rescindido.
+<b>CLÁUSULA DÉCIMA SÉTIMA:</b> Está vedado ao LOCATÁRIO perturbar a paz e o sossego dos vizinhos, devendo observar as normas municipais de controle de ruído e poluição sonora vigentes no município de ${cidade}. Em caso de reincidência, o presente contrato poderá ser rescindido por justa causa.
 <br><br>
 <b>CLÁUSULA DÉCIMA OITAVA:</b> ${nomeAlugante}, brasileiro, ${maritalStatus}, portador da cédula de R.G de nº: ${rg}, e C.P.F de nº ${cpf}, nascido em ${birthdate} autoriza ${locadorNome}, brasileiro, ${locadorEstCivil}, portador da cédula de R.G de nº ${locadorRg} e CPF nº ${locadorCpf} a realizar a transferência de titularidade das contas de fornecimento de água e energia elétrica do imóvel para o seu nome a partir da data de início da locação, bem como a reversão de tais titularidades ao LOCADOR quando da rescisão ou término deste contrato, junto às respectivas concessionárias de serviço público responsáveis pela área do imóvel.
 <br><br>
 <br>
-Embu das Artes,<br>
+${cidade},<br>
 ${dataAtualExtenso}
 <br><br>
 _____________________________________________________<br>
