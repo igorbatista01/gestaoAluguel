@@ -12,11 +12,18 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "Content-Type",
 };
 
+// Modelos em ordem de preferência (fallback automático)
+const MODELOS = [
+  "gemini-3-flash-preview",
+  "gemini-2.5-flash",
+  "gemini-2.0-flash",
+];
+
 // ── Chamada HTTPS ao Gemini sem depender de fetch ──────────────────────────────
-function geminiPost(apiKey, body) {
+function geminiPost(apiKey, modelo, body) {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
-    const path = `/v1beta/models/gemini-3-flash-preview:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const path = `/v1beta/models/${modelo}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const options = {
       hostname: "generativelanguage.googleapis.com",
       path,
@@ -29,12 +36,29 @@ function geminiPost(apiKey, body) {
     const req = https.request(options, (res) => {
       let data = "";
       res.on("data", (chunk) => { data += chunk; });
-      res.on("end", () => resolve({ status: res.statusCode, body: data }));
+      res.on("end", () => resolve({ status: res.statusCode, body: data, modelo }));
     });
     req.on("error", reject);
     req.write(bodyStr);
     req.end();
   });
+}
+
+// Tenta cada modelo em sequência; só avança se o anterior retornar 503 ou 429
+async function geminiPostComFallback(apiKey, body) {
+  let ultimoResult = null;
+  for (const modelo of MODELOS) {
+    const result = await geminiPost(apiKey, modelo, body);
+    console.log(`Gemini [${modelo}] status: ${result.status}`);
+    ultimoResult = result;
+    // Sucesso → retorna imediatamente
+    if (result.status >= 200 && result.status < 300) return result;
+    // Quota esgotada (429) ou sobrecarga (503) → tenta próximo modelo
+    if (result.status === 429 || result.status === 503) continue;
+    // Outro erro (401, 403, 404…) → não adianta tentar outro modelo
+    break;
+  }
+  return ultimoResult;
 }
 
 // ── Prompt para o Gemini ────────────────────────────────────────────────────────
@@ -100,7 +124,7 @@ module.exports = async function handler(req, res) {
       },
     };
 
-    const result = await geminiPost(GEMINI_API_KEY, geminiBody);
+    const result = await geminiPostComFallback(GEMINI_API_KEY, geminiBody);
 
     if (result.status < 200 || result.status >= 300) {
       console.error("Gemini error status:", result.status, result.body);
@@ -108,7 +132,6 @@ module.exports = async function handler(req, res) {
       let mensagem = "Erro ao chamar a API Gemini.";
 
       if (result.status === 429) {
-        // Tenta extrair o retryDelay da resposta do Gemini para informar o usuário
         let segundos = 60;
         try {
           const errData = JSON.parse(result.body);
@@ -118,14 +141,16 @@ module.exports = async function handler(req, res) {
             if (match) segundos = Math.ceil(parseInt(match[1], 10)) + 5;
           }
         } catch (_) { /* usa default 60s */ }
-        mensagem = `Muitas requisições em sequência. Aguarde ${segundos} segundos e tente novamente.`;
+        mensagem = `Limite de uso diário atingido. Aguarde ${segundos} segundos e tente novamente.`;
+      } else if (result.status === 503) {
+        mensagem = "O servidor de IA está sobrecarregado no momento. Aguarde alguns segundos e tente novamente.";
       } else if (result.status === 404) {
         mensagem = "Modelo de IA indisponível. Tente novamente mais tarde.";
       } else if (result.status === 401 || result.status === 403) {
         mensagem = "Chave de API inválida ou sem permissão.";
       }
 
-      const statusParaCliente = [429, 401, 403].includes(result.status) ? result.status : 502;
+      const statusParaCliente = [429, 401, 403, 503].includes(result.status) ? result.status : 502;
       res.writeHead(statusParaCliente, { ...CORS_HEADERS, "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: mensagem }));
       return;
