@@ -206,7 +206,13 @@ export default function ModeloContrato() {
         return;
       }
       if (editorRef.current) {
-        editorRef.current.innerHTML = data.html;
+        // Converte {{variavel}} gerado pela IA no mesmo chip visual do editor manual
+        const CHIP_STYLE = "display:inline-flex;align-items:center;gap:2px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 2px 1px 6px;font-size:0.85em;font-family:monospace;user-select:none;cursor:default;";
+        const CHIP_X_STYLE = "display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#3b82f6;color:#fff;font-family:sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;";
+        const htmlComChips = data.html.replace(/\{\{([^}]+)\}\}/g, (match) =>
+          `<span class="var-chip" contenteditable="false" style="${CHIP_STYLE}">${match}<span class="var-chip-x" style="${CHIP_X_STYLE}" title="Remover variável">\u00D7</span></span>\u00A0`
+        );
+        editorRef.current.innerHTML = htmlComChips;
       }
     } catch (e) {
       setErroIA("Erro de conexão com o servidor.");
