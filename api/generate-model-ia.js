@@ -16,7 +16,7 @@ const CORS_HEADERS = {
 function geminiPost(apiKey, body) {
   return new Promise((resolve, reject) => {
     const bodyStr = JSON.stringify(body);
-    const path = `/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const path = `/v1beta/models/gemini-3-flash-preview:generateContent?key=${encodeURIComponent(apiKey)}`;
     const options = {
       hostname: "generativelanguage.googleapis.com",
       path,
