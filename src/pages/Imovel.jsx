@@ -229,6 +229,15 @@ export default function Imovel() {
     <div style={s.wrap}>
       <div style={s.backRow}>
         <button style={s.backBtn} onClick={() => navigate("/imoveis")}>← Voltar</button>
+        {podeEditar && (
+          <button
+            style={s.gerarContratoBtn}
+            onClick={() => navigate("/", { state: { imovelId: id } })}
+            title="Abre o assistente de Novo Contrato com este imóvel já selecionado"
+          >
+            📝 Gerar contrato
+          </button>
+        )}
       </div>
 
       {/* ── Card do Imóvel ── */}
@@ -539,8 +548,9 @@ function InfoRow({ label, value }) {
 const s = {
   wrap: { maxWidth: "720px", margin: "0 auto", padding: "2rem 1rem" },
   center: { textAlign: "center", padding: "4rem 0", color: "#9ca3af" },
-  backRow: { marginBottom: "1.25rem" },
+  backRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", gap: "12px", flexWrap: "wrap" },
   backBtn: { background: "none", border: "none", color: "#2563eb", fontSize: "14px", cursor: "pointer", padding: 0, fontWeight: 500 },
+  gerarContratoBtn: { background: "#2563eb", color: "#fff", border: "none", padding: "9px 16px", borderRadius: "8px", fontWeight: 600, fontSize: "13px", cursor: "pointer" },
   linkBtn: { background: "none", border: "none", color: "#2563eb", cursor: "pointer", textDecoration: "underline" },
   section: { background: "#fff", borderRadius: "12px", padding: "1.5rem", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", marginBottom: "1.25rem" },
   sectionHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" },

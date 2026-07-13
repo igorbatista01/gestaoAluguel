@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, getDoc, doc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
@@ -55,7 +56,14 @@ function ReviewRow({ label, value }) {
 
 export default function NovoContrato() {
   const { user, perfil } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [step, setStep] = useState(1);
+
+  // Atalho vindo da página do imóvel ("📝 Gerar contrato"): pré-seleciona o
+  // imóvel assim que a lista carregar, pulando a escolha manual no passo 1.
+  const imovelIdAlvo = location.state?.imovelId || null;
+  const autoSelecionouRef = useRef(false);
 
   // Imóveis do Firestore
   const [imoveis, setImoveis] = useState([]);
@@ -113,6 +121,19 @@ export default function NovoContrato() {
   }, [user]);
 
   useEffect(() => { carregarImoveis(); }, [carregarImoveis]);
+
+  // Assim que os imóveis carregarem, se veio um imovelId pelo atalho da
+  // página do imóvel, seleciona esse imóvel automaticamente (uma única vez).
+  useEffect(() => {
+    if (!imovelIdAlvo || autoSelecionouRef.current || loadingImoveis) return;
+    const im = imoveis.find((i) => i.id === imovelIdAlvo);
+    if (im) {
+      autoSelecionouRef.current = true;
+      selecionarImovel(im);
+      // Limpa o state da navegação para não reaplicar em um próximo reset.
+      navigate(".", { replace: true, state: {} });
+    }
+  }, [imovelIdAlvo, imoveis, loadingImoveis]);
 
   // Carrega o template do modelo associado ao imóvel
   async function carregarTemplate(modeloId) {
