@@ -143,7 +143,17 @@ function htmlToBlocks(html) {
 
     // ── self-closing ──
     if (tok.type === "self") {
-      if (tok.tag === "br") addText("\n");
+      if (tok.tag === "br") { addText("\n"); continue; }
+      if (tok.tag === "hr") {
+        // <hr class="page-break"> é inserido pelo editor de modelos como
+        // marcador manual de quebra de página no PDF gerado.
+        const classes = String(tok.attrs.class || "").split(/\s+/);
+        if (classes.includes("page-break")) {
+          flush();
+          blocks.push({ pageBreak: true });
+        }
+        continue;
+      }
       continue;
     }
 
@@ -233,6 +243,10 @@ function renderizarHtmlRico(doc, html) {
   const pageW    = doc.page.width - margins.left - margins.right;
 
   for (const block of blocks) {
+    if (block.pageBreak) {
+      doc.addPage();
+      continue;
+    }
     const { runs, align, indent, bullet } = block;
     // filtra runs sem texto
     const validos = runs.filter(r => r.text !== "");

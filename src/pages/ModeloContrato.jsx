@@ -150,11 +150,20 @@ export default function ModeloContrato() {
     document.execCommand(cmd, false, value);
   }, []);
 
+  // Insere um marcador de quebra de página. Vira um <hr class="page-break">
+  // que, na hora de gerar o PDF, faz o gerador pular para a próxima página.
+  function inserirQuebraPagina() {
+    editorRef.current?.focus();
+    insertAtCursor(
+      `<hr class="page-break" contenteditable="false" title="Quebra de página" style="border:none;border-top:2px dashed #f59e0b;margin:18px 0;" />`
+    );
+  }
+
   // Insere variável (com espaço após o chip para separação entre chips consecutivos)
   function inserirVariavel(key) {
     editorRef.current?.focus();
     insertAtCursor(
-      `<span class="var-chip" contenteditable="false" style="display:inline-flex;align-items:center;gap:2px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 2px 1px 6px;font-size:0.85em;font-family:monospace;user-select:none;cursor:default;">${key}<span class="var-chip-x" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#3b82f6;color:#fff;font-family:sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;" title="Remover variável">×</span></span>\u00A0`
+      `<span class="var-chip" contenteditable="false" style="display:inline-flex;align-items:center;gap:2px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 2px 1px 6px;font-size:0.85em;font-family:monospace;user-select:none;cursor:default;">${key}<span class="var-chip-x" style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#3b82f6;color:#fff;font-family:sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;" title="Remover variável">×</span></span> `
     );
   }
 
@@ -246,7 +255,7 @@ export default function ModeloContrato() {
         const CHIP_STYLE = "display:inline-flex;align-items:center;gap:2px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 2px 1px 6px;font-size:0.85em;font-family:monospace;user-select:none;cursor:default;";
         const CHIP_X_STYLE = "display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#3b82f6;color:#fff;font-family:sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;";
         const htmlComChips = htmlLimpo.replace(/\{\{([^}]+)\}\}/g, (match) =>
-          `<span class="var-chip" contenteditable="false" style="${CHIP_STYLE}">${match}<span class="var-chip-x" style="${CHIP_X_STYLE}" title="Remover variável">\u00D7</span></span>\u00A0`
+          `<span class="var-chip" contenteditable="false" style="${CHIP_STYLE}">${match}<span class="var-chip-x" style="${CHIP_X_STYLE}" title="Remover variável">×</span></span> `
         );
         editorRef.current.innerHTML = htmlComChips;
       }
@@ -360,6 +369,8 @@ export default function ModeloContrato() {
           <ToolBtn onClick={() => execCmd("insertUnorderedList")} title="Lista">• Lista</ToolBtn>
           <ToolBtn onClick={() => execCmd("insertOrderedList")} title="Lista numerada">1. Lista</ToolBtn>
           <div style={s.sep} />
+          <ToolBtn onClick={inserirQuebraPagina} title="Inserir quebra de página (o PDF pula para a próxima página aqui)">⤓ Quebra pág.</ToolBtn>
+          <div style={s.sep} />
           <ToolBtn onClick={() => execCmd("removeFormat")} title="Remover formatação">✕ Fmt</ToolBtn>
         </div>
 
@@ -387,6 +398,7 @@ export default function ModeloContrato() {
 
         <p style={s.hint}>
           💡 Dica: use as variáveis do painel lateral para preencher dados automaticamente ao gerar o PDF.
+          Use "Quebra pág." na barra de ferramentas para forçar o início de uma nova página no PDF.
         </p>
       </div>
 
