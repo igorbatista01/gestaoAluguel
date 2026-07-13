@@ -178,6 +178,15 @@ export default function ModeloContrato() {
     }
   }
 
+  // Abre o modal de associação a qualquer momento (edição de modelo existente)
+  async function abrirAssociacao() {
+    const q = query(collection(db, "imoveis"), where("uid", "==", user.uid));
+    const snap = await getDocs(q);
+    const lista = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    setImoveis(lista);
+    setShowAssocModal(true);
+  }
+
   async function associarImovel(imovelId) {
     setAssociando(imovelId);
     await updateDoc(doc(db, "imoveis", imovelId), { modeloContratoId: savedId || id });
@@ -264,6 +273,11 @@ export default function ModeloContrato() {
                 title="Gerar contrato completo com Inteligência Artificial"
               >
                 {gerandoIA ? "⏳ Gerando..." : "✨ Gerar com IA"}
+              </button>
+            )}
+            {!isNew && (
+              <button style={s.btnAssocTop} onClick={abrirAssociacao}>
+                🔗 Associar imóveis
               </button>
             )}
             <button style={s.btnSec} onClick={() => navigate("/modelos")}>Cancelar</button>
@@ -353,7 +367,7 @@ export default function ModeloContrato() {
       {showAssocModal && (
         <div style={s.overlay}>
           <div style={s.modal}>
-            <h3 style={s.modalTitle}>✓ Modelo criado!</h3>
+            <h3 style={s.modalTitle}>{isNew ? "✓ Modelo criado!" : "Associar imóveis"}</h3>
             <p style={s.modalText}>
               Deseja associar este modelo a algum imóvel? Assim, toda vez que gerar um contrato para esse imóvel, este modelo será usado.
             </p>
@@ -366,8 +380,9 @@ export default function ModeloContrato() {
               <div style={s.imovelList}>
                 {imoveis.map((im) => (
                   <div key={im.id} style={s.imovelRow}>
-                    <span style={{ fontSize: "14px", color: "#374151" }}>
+                    <span style={{ fontSize: "14px", color: "#374151", fontWeight: 600 }}>
                       {im.logradouro}{im.numero ? `, ${im.numero}` : ""}
+                      {im.complemento ? ` - ${im.complemento}` : ""}
                     </span>
                     <button
                       style={{
@@ -440,6 +455,7 @@ const s = {
   center: { display: "flex", alignItems: "center", justifyContent: "center", height: "200px", color: "#6b7280" },
   btnSec: { background: "#f9fafb", color: "#374151", border: "1px solid #e5e7eb", padding: "8px 16px", borderRadius: "8px", fontSize: "13px", cursor: "pointer" },
   btnSave: { background: "#2563eb", color: "#fff", border: "none", padding: "8px 18px", borderRadius: "8px", fontWeight: 700, fontSize: "13px", cursor: "pointer" },
+  btnAssocTop: { background: "#eff6ff", color: "#2563eb", border: "none", padding: "8px 16px", borderRadius: "8px", fontWeight: 600, fontSize: "13px", cursor: "pointer", whiteSpace: "nowrap" },
   btnIA: { background: "linear-gradient(135deg, #7c3aed, #4f46e5)", color: "#fff", border: "none", padding: "8px 16px", borderRadius: "8px", fontWeight: 600, fontSize: "13px", cursor: "pointer", boxShadow: "0 2px 8px rgba(124,58,237,0.3)", whiteSpace: "nowrap" },
   errBox: { background: "#fee2e2", color: "#991b1b", padding: "8px 14px", fontSize: "13px", margin: "0 1.25rem 0" },
   toolbar: {
