@@ -1,13 +1,26 @@
 import { useEffect, useState } from "react";
 import { collection, query, orderBy, where, getDocs } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
+
+// Campos que o /api/generate-pdf espera — os mesmos enviados na hora em que o
+// contrato foi gerado originalmente. Reenviá-los reproduz o PDF idêntico
+// (mesmas datas, valores etc.), sem depender de nada ter sido salvo em disco.
+const CAMPOS_REGERACAO = [
+  "nomeAlugante", "rg", "cpf", "maritalStatus", "birthdate",
+  "dataInicioContrato", "diaPagamento", "tempoContrato", "valorAluguel",
+  "numImovel", "numCasa", "enderecoCompleto", "numComodos",
+  "nomeLocador", "rgLocador", "cpfLocador", "dataNascimentoLocador", "maritalStatusLocador",
+  "dataGeracao", "cidadeImovel", "customHtml",
+];
 
 export default function Historico() {
   const { user, nivel } = useAuth();
   const [contratos, setContratos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busca, setBusca] = useState("");
+  const [baixando, setBaixando] = useState(null); // id do contrato sendo baixado
+  const [erroBaixar, setErroBaixar] = useState({}); // { [id]: mensagem }
 
   useEffect(() => {
     if (!user) return;
@@ -42,6 +55,46 @@ export default function Historico() {
     if (diff <= 30) return { label: `Vence em ${diff}d`, color: "#92400e", bg: "#fef3c7" };
     if (diff <= 60) return { label: `Vence em ${diff}d`, color: "#854f0b", bg: "#fef9c3" };
     return { label: "Vigente", color: "#166534", bg: "#dcfce7" };
+  }
+
+  // Regera o PDF a partir dos dados já salvos no contrato (não recalcula nada:
+  // usa exatamente as datas e valores da geração original).
+  async function baixarPDF(c) {
+    setBaixando(c.id);
+    setErroBaixar((p) => ({ ...p, [c.id]: null }));
+    try {
+      const body = {};
+      for (const campo of CAMPOS_REGERACAO) {
+        if (c[campo] !== undefined && c[campo] !== null) body[campo] = c[campo];
+      }
+
+      const token = await auth.currentUser.getIdToken();
+      const res = await fetch("/api/generate-pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        setErroBaixar((p) => ({ ...p, [c.id]: "Não foi possível gerar o PDF." }));
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `contrato_${(c.nomeAlugante || "contrato").replace(/\s+/g, "_")}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErroBaixar((p) => ({ ...p, [c.id]: "Erro de conexão com o servidor." }));
+    } finally {
+      setBaixando(null);
+    }
   }
 
   return (
@@ -81,6 +134,16 @@ export default function Historico() {
                   <span>Aluguel: <b>R$ {c.valorAluguel}</b></span>
                   <span>Vence dia: <b>{c.diaPagamento}</b></span>
                 </div>
+                {erroBaixar[c.id] && <div style={s.erroBaixar}>{erroBaixar[c.id]}</div>}
+                <div style={s.cardFooter}>
+                  <button
+                    style={{ ...s.btnBaixar, opacity: baixando === c.id ? 0.7 : 1 }}
+                    onClick={() => baixarPDF(c)}
+                    disabled={baixando === c.id}
+                  >
+                    {baixando === c.id ? "Gerando..." : "⬇ Baixar PDF"}
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -103,4 +166,7 @@ const s = {
   sub: { fontSize: "13px", color: "#6b7280", marginTop: "3px" },
   badge: { padding: "4px 10px", borderRadius: "99px", fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap" },
   cardBottom: { display: "flex", gap: "1.5rem", flexWrap: "wrap", fontSize: "13px", color: "#6b7280", borderTop: "1px solid #f3f4f6", paddingTop: "12px" },
+  cardFooter: { display: "flex", justifyContent: "flex-end", marginTop: "10px" },
+  btnBaixar: { background: "#eff6ff", color: "#2563eb", border: "none", padding: "7px 14px", borderRadius: "8px", fontSize: "13px", fontWeight: 600, cursor: "pointer" },
+  erroBaixar: { color: "#991b1b", fontSize: "12px", marginTop: "8px" },
 };
