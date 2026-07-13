@@ -1,5 +1,7 @@
 const PDFDocument = require("pdfkit");
 const { buildContratoHtml } = require("./contract");
+const { applyCors, handlePreflight } = require("./_cors");
+const { authenticate } = require("./_auth");
 
 const isValidRG = (rg) => /^[\dXx]{1,15}$/.test(rg);
 const isValidCPF = (cpf) => /^\d{11}$/.test(cpf);
@@ -356,14 +358,31 @@ function gerarPDFBuffer(data) {
 }
 
 module.exports = async function handler(req, res) {
+  // CORS preflight (responde 204 e encerra)
+  if (handlePreflight(req, res)) return;
+  // CORS para a resposta real
+  applyCors(req, res);
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido." });
   }
+
+  // ── Autenticação: exige ID token Firebase válido ──────────────────────────
+  const auth = await authenticate(req);
+  if (!auth.ok) {
+    return res.status(auth.status).json({ error: auth.error });
+  }
+  const { uid } = auth;
 
   const data = req.body;
   const errors = validateBody(data);
   if (errors.length) {
     return res.status(400).json({ errors });
+  }
+
+  // Se o cliente incluiu um uid no corpo, garanta que bate com o token.
+  if (data.uid && data.uid !== uid) {
+    return res.status(403).json({ error: "uid do corpo não corresponde ao usuário autenticado." });
   }
 
   try {

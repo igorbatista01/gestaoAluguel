@@ -4,8 +4,28 @@ import {
   doc, getDoc, setDoc, updateDoc, serverTimestamp, collection,
   getDocs, query, where,
 } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import DOMPurify from "dompurify";
+import { auth, db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
+
+// ── Sanitização ──────────────────────────────────────────────────────────────
+// Permite apenas tags/atributos usados pelo editor. Bloqueia scripts, event
+// handlers (onclick etc.), iframes e URLs com javascript:.
+const SANITIZE_CONFIG = {
+  ALLOWED_TAGS: [
+    "b","strong","i","em","u","p","div","span","br","hr",
+    "ul","ol","li","h1","h2","h3","h4","h5","h6",
+    "font","sub","sup",
+  ],
+  ALLOWED_ATTR: ["style","class","contenteditable","title","size"],
+  ALLOW_DATA_ATTR: false,
+  FORBID_TAGS: ["script","iframe","object","embed","form","input","link","meta","base"],
+  FORBID_ATTR: ["onerror","onload","onclick","onmouseover","onfocus","onblur","href","src","action","formaction"],
+};
+
+function sanitizeHtml(html) {
+  return DOMPurify.sanitize(html || "", SANITIZE_CONFIG);
+}
 
 // ── Variáveis disponíveis ─────────────────────────────────────────────────────
 const VARIAVEIS = [
@@ -119,7 +139,8 @@ export default function ModeloContrato() {
   // Aplica o conteúdo no editor depois que ele estiver montado no DOM
   useEffect(() => {
     if (conteudoInicial !== null && editorRef.current) {
-      editorRef.current.innerHTML = conteudoInicial;
+      // Sanitiza HTML vindo do Firestore antes de renderizar — evita XSS.
+      editorRef.current.innerHTML = sanitizeHtml(conteudoInicial);
     }
   }, [conteudoInicial]);
 
@@ -140,7 +161,8 @@ export default function ModeloContrato() {
   // Salvar
   async function salvar() {
     if (!nome.trim()) { setError("Dê um nome ao modelo."); return; }
-    const conteudo = editorRef.current?.innerHTML || "";
+    // Sanitiza antes de salvar (defesa em profundidade — também sanitizamos na leitura).
+    const conteudo = sanitizeHtml(editorRef.current?.innerHTML || "");
     if (!conteudo.trim() || conteudo === "<br>") { setError("O modelo não pode estar vazio."); return; }
 
     setSaving(true);
@@ -192,12 +214,15 @@ export default function ModeloContrato() {
     setGerandoIA(true);
     setErroIA("");
     try {
+      const token = await auth.currentUser.getIdToken();
       const res = await fetch("/api/generate-model-ia", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nivelUsuario: nivel,
-        }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        // nivelUsuario NÃO é enviado — o servidor verifica via Firestore.
+        body: JSON.stringify({}),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -206,10 +231,12 @@ export default function ModeloContrato() {
         return;
       }
       if (editorRef.current) {
+        // Sanitiza o HTML vindo da IA antes de transformar em chips.
+        const htmlLimpo = sanitizeHtml(data.html || "");
         // Converte {{variavel}} gerado pela IA no mesmo chip visual do editor manual
         const CHIP_STYLE = "display:inline-flex;align-items:center;gap:2px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 2px 1px 6px;font-size:0.85em;font-family:monospace;user-select:none;cursor:default;";
         const CHIP_X_STYLE = "display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:#3b82f6;color:#fff;font-family:sans-serif;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;";
-        const htmlComChips = data.html.replace(/\{\{([^}]+)\}\}/g, (match) =>
+        const htmlComChips = htmlLimpo.replace(/\{\{([^}]+)\}\}/g, (match) =>
           `<span class="var-chip" contenteditable="false" style="${CHIP_STYLE}">${match}<span class="var-chip-x" style="${CHIP_X_STYLE}" title="Remover variável">\u00D7</span></span>\u00A0`
         );
         editorRef.current.innerHTML = htmlComChips;

@@ -1,0 +1,82 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Regras de segurança do Firestore — Gestão de Aluguel
+//
+// Deploy:
+//   firebase deploy --only firestore:rules
+//
+// IMPORTANTE: o campo `nivel` do /usuarios só pode ser alterado por ADMIN.
+// Isso impede que um usuário comum vire PREMIUM/ADMIN só editando o próprio doc.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function signedIn()     { return request.auth != null; }
+    function isOwner(uid)   { return signedIn() && request.auth.uid == uid; }
+    function nivelOf(uid)   { return get(/databases/$(database)/documents/usuarios/$(uid)).data.nivel; }
+    function isAdmin()      { return signedIn() && nivelOf(request.auth.uid) == "ADMIN"; }
+
+    // Detecta tentativa de mudar o campo `nivel` no próprio doc.
+    function nivelNaoMudou() {
+      return !(request.resource.data.diff(resource.data).affectedKeys().hasAny(["nivel"]));
+    }
+
+    // ── /usuarios/{uid} ────────────────────────────────────────────────────
+    // - Qualquer um logado lê o próprio perfil. ADMIN lê todos.
+    // - Criação do próprio perfil só com nivel="NORMAL".
+    // - Atualização do próprio perfil sem mexer no nivel.
+    // - ADMIN pode alterar nivel de qualquer usuário.
+    match /usuarios/{uid} {
+      allow read:   if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid) && request.resource.data.nivel == "NORMAL";
+      allow update: if (isOwner(uid) && nivelNaoMudou()) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── /codigos/{code} ────────────────────────────────────────────────────
+    // Códigos de convite: leitura pública (para validar no cadastro),
+    // criação só por ADMIN, atualização apenas para marcar como usado
+    // (feito pelo próprio usuário no momento do cadastro).
+    match /codigos/{code} {
+      allow read:   if true; // necessário para validar o código antes do login
+      allow create: if isAdmin();
+      allow update: if signedIn()
+                    && resource.data.usado == false
+                    && request.resource.data.usado == true
+                    && request.resource.data.usadoPor == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // ── /imoveis/{id} ──────────────────────────────────────────────────────
+    match /imoveis/{id} {
+      allow read:   if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete:
+                   if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ── /modelos_contrato/{id} ─────────────────────────────────────────────
+    match /modelos_contrato/{id} {
+      allow read:   if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete:
+                   if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ── /contratos/{id} ────────────────────────────────────────────────────
+    match /contratos/{id} {
+      allow read:   if signedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete:
+                   if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Negar tudo mais.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

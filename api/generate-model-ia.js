@@ -3,14 +3,13 @@
 // Usa o módulo https nativo do Node para evitar problemas de compatibilidade com fetch.
 
 const https = require("https");
+const { corsHeaders, handlePreflight } = require("./_cors");
+const { authenticate, getUserNivel } = require("./_auth");
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+// Tipos de imóvel aceitos — whitelist para evitar injeção de prompt no Gemini.
+const TIPOS_IMOVEL_VALIDOS = new Set(["residencial", "comercial", "industrial", "rural"]);
 
 // Modelos em ordem de preferência (fallback automático)
 const MODELOS = [
@@ -65,7 +64,7 @@ async function geminiPostComFallback(apiKey, body) {
 // O contrato gerado usa as {{variáveis}} do sistema, não valores reais.
 // O tipo de imóvel é o único parâmetro opcional (residencial por padrão).
 function buildPrompt(tipoImovel) {
-  const tipo = tipoImovel || "residencial";
+  const tipo = TIPOS_IMOVEL_VALIDOS.has(tipoImovel) ? tipoImovel : "residencial";
 
   return `Você é um especialista jurídico em contratos de locação no Brasil.
 
@@ -87,31 +86,58 @@ Gere um contrato de locação ${tipo} completo, formal e juridicamente válido, 
 }
 
 module.exports = async function handler(req, res) {
-  // CORS preflight
-  if (req.method === "OPTIONS") {
-    res.writeHead(204, CORS_HEADERS);
-    res.end();
-    return;
-  }
+  // CORS preflight (responde 204 e encerra)
+  if (handlePreflight(req, res)) return;
+
+  // Headers de CORS para esta request — calculados uma vez por request
+  // porque dependem do Origin recebido (allowlist).
+  const cors = corsHeaders(req);
 
   if (req.method !== "POST") {
-    res.writeHead(405, { ...CORS_HEADERS, "Content-Type": "application/json" });
+    res.writeHead(405, { ...cors, "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Método não permitido." }));
     return;
   }
 
   if (!GEMINI_API_KEY) {
-    res.writeHead(500, { ...CORS_HEADERS, "Content-Type": "application/json" });
+    res.writeHead(500, { ...cors, "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Chave da API Gemini não configurada no servidor." }));
     return;
   }
 
-  const { tipoImovel, nivelUsuario } = req.body || {};
+  // ── Autenticação: exige ID token Firebase válido ──────────────────────────
+  const auth = await authenticate(req);
+  if (!auth.ok) {
+    res.writeHead(auth.status, { ...cors, "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: auth.error }));
+    return;
+  }
+  const { uid } = auth;
+
+  // ── Autorização: NUNCA confie em campo de nível vindo do cliente ──────────
+  // Falha de Firestore vira 500 (não 403) — caso contrário o frontend trataria
+  // como token ruim e deslogaria o usuário legítimo.
+  let nivel;
+  try {
+    nivel = await getUserNivel(uid);
+  } catch (err) {
+    console.error("Erro ao ler nivel (uid=" + uid + "):", err);
+    res.writeHead(500, { ...cors, "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Erro ao verificar permissões." }));
+    return;
+  }
 
   // Só PREMIUM ou ADMIN podem usar
-  if (!["PREMIUM", "ADMIN"].includes(nivelUsuario)) {
-    res.writeHead(403, { ...CORS_HEADERS, "Content-Type": "application/json" });
+  if (!["PREMIUM", "ADMIN"].includes(nivel)) {
+    res.writeHead(403, { ...cors, "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Recurso disponível apenas para usuários PREMIUM." }));
+    return;
+  }
+
+  const { tipoImovel } = req.body || {};
+  if (tipoImovel !== undefined && !TIPOS_IMOVEL_VALIDOS.has(tipoImovel)) {
+    res.writeHead(400, { ...cors, "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Tipo de imóvel inválido." }));
     return;
   }
 
@@ -151,7 +177,7 @@ module.exports = async function handler(req, res) {
       }
 
       const statusParaCliente = [429, 401, 403, 503].includes(result.status) ? result.status : 502;
-      res.writeHead(statusParaCliente, { ...CORS_HEADERS, "Content-Type": "application/json" });
+      res.writeHead(statusParaCliente, { ...cors, "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: mensagem }));
       return;
     }
@@ -160,7 +186,7 @@ module.exports = async function handler(req, res) {
     const html = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
 
     if (!html) {
-      res.writeHead(500, { ...CORS_HEADERS, "Content-Type": "application/json" });
+      res.writeHead(500, { ...cors, "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "A IA não retornou conteúdo." }));
       return;
     }
@@ -172,11 +198,11 @@ module.exports = async function handler(req, res) {
       .replace(/\s*```$/i, "")
       .trim();
 
-    res.writeHead(200, { ...CORS_HEADERS, "Content-Type": "application/json" });
+    res.writeHead(200, { ...cors, "Content-Type": "application/json" });
     res.end(JSON.stringify({ html: htmlLimpo }));
   } catch (err) {
-    console.error("Erro generate-model-ia:", err);
-    res.writeHead(500, { ...CORS_HEADERS, "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Erro interno do servidor.", detalhes: err.message }));
+    console.error("Erro generate-model-ia (uid=" + uid + "):", err);
+    res.writeHead(500, { ...cors, "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Erro interno do servidor." }));
   }
 };

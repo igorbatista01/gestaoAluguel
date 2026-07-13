@@ -7,6 +7,10 @@
     "api/generate-pdf.js": {
       "memory": 1024,
       "maxDuration": 30
+    },
+    "api/generate-model-ia.js": {
+      "memory": 512,
+      "maxDuration": 60
     }
   }
 }

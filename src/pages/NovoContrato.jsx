@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { collection, addDoc, getDocs, query, where, orderBy, serverTimestamp, getDoc, doc, updateDoc } from "firebase/firestore";
-import { db } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { useAuth } from "../lib/auth";
 import { maskDate, maskCPF, maskRG, maskMoney, rawCPF, rawRG, rawMoney } from "../lib/masks";
 import { isValidDate, calcDataFim, ESTADO_CIVIL_OPCOES } from "../lib/validation";
@@ -233,6 +233,12 @@ export default function NovoContrato() {
     setErrors([]);
     try {
       const im = imovelSelecionado;
+      // Validação defensiva: calcDataFim retorna "—" se dados estiverem inválidos.
+      const dataFimCalculada = calcDataFim(form.dataInicioContrato, form.tempoContrato);
+      if (dataFimCalculada === "—") {
+        setErrors(["Não foi possível calcular a data de término. Verifique a data de início e a duração."]);
+        return;
+      }
       const enderecoImovel = [im.logradouro, im.numero, im.complemento, im.bairro, im.cidade, im.estado]
         .filter(Boolean).join(", ");
 
@@ -258,7 +264,7 @@ export default function NovoContrato() {
         // Contrato
         data_contrato: new Date().toLocaleDateString("pt-BR"),
         data_inicio: form.dataInicioContrato,
-        data_fim: calcDataFim(form.dataInicioContrato, form.tempoContrato),
+        data_fim: dataFimCalculada,
         valor_aluguel: `R$ ${form.valorAluguel}`,
         dia_vencimento: form.diaPagamento,
         duracao_meses: form.tempoContrato,
@@ -299,9 +305,13 @@ export default function NovoContrato() {
         body.customHtml = substituirVariaveis(templateHtml, vars);
       }
 
+      const token = await auth.currentUser.getIdToken();
       const res = await fetch("/api/generate-pdf", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(body),
       });
 
@@ -325,7 +335,7 @@ export default function NovoContrato() {
         imovelId: im.id,
         enderecoImovel: enderecoImovel,
         criadoEm: serverTimestamp(),
-        dataFim: calcDataFim(form.dataInicioContrato, form.tempoContrato),
+        dataFim: dataFimCalculada,
       });
 
       // Se o imóvel está desocupado, pergunta se quer associar o locatário
